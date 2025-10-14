@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Formatter & JSX Converter</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>HTML Formatter & JSX Converter</h1>
+            <p>Transform your clustered HTML into properly formatted code or convert it to JSX with component suggestions</p>
+        </header>
+
+        <main>
+            <div class="input-section">
+                <div class="input-header">
+                    <h2>Input</h2>
+                    <div class="input-options">
+                        <label class="file-upload-btn">
+                            <input type="file" id="fileInput" accept=".html,.htm,.txt" />
+                            Upload HTML File
+                        </label>
+                        <button id="clearBtn" class="btn btn-secondary">Clear</button>
+                    </div>
+                </div>
+                
+                <textarea 
+                    id="htmlInput" 
+                    placeholder="Paste your clustered HTML here..."
+                    rows="15"
+                ></textarea>
+            </div>
+
+            <div class="controls">
+                <div class="mode-selector">
+                    <label>
+                        <input type="radio" name="mode" value="format" checked>
+                        <span>Format HTML</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="mode" value="jsx">
+                        <span>Convert to JSX</span>
+                    </label>
+                </div>
+                
+                <button id="processBtn" class="btn btn-primary">Process</button>
+            </div>
+
+            <div class="output-section">
+                <div class="output-header">
+                    <h2>Output</h2>
+                    <div class="output-options">
+                        <button id="copyBtn" class="btn btn-secondary" disabled>Copy to Clipboard</button>
+                        <button id="downloadBtn" class="btn btn-secondary" disabled>Download</button>
+                    </div>
+                </div>
+                
+                <div class="output-container">
+                    <pre><code id="outputCode"></code></pre>
+                </div>
+            </div>
+
+            <div class="suggestions-section" id="suggestionsSection" style="display: none;">
+                <div class="suggestions-header">
+                    <h2>Component Suggestions</h2>
+                    <button id="toggleSuggestions" class="btn btn-secondary">Collapse</button>
+                </div>
+                
+                <div class="suggestions-content" id="suggestionsContent">
+                    <!-- Component suggestions will be populated here -->
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Built with Go and modern web technologies</p>
+        </footer>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Processing your HTML...</p>
+    </div>
+
+    <div id="toast" class="toast" style="display: none;"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
