@@ -8,6 +8,7 @@ A powerful tool built with Go that formats clustered HTML with proper indentatio
 - **JSX Conversion**: Convert HTML to JSX with proper attribute transformations
 - **Component Analysis**: Automatically suggest reusable React components from HTML patterns
 - **Zip Export**: Extract inline styles/scripts and download external resources into organized zip files
+- **Node.js Project Export**: Transform HTML into production-ready Node.js applications with Vite, Express, and modern tooling
 - **External Resource Fetching**: Automatically download external CSS and JS files from URLs
 - **Dual Interface**: Both command-line tool and web interface
 - **Fast Performance**: Built with Go for excellent performance
@@ -75,6 +76,7 @@ echo '<div class="card"><h2>Title</h2></div>' | htmlfmt -jsx
 - `-jsx`: Convert HTML to JSX
 - `-analyze`: Analyze HTML and suggest components (outputs JSON)
 - `-export`: Export HTML as zip with separated CSS/JS and external resources
+- `-nodejs`: Export as Node.js project with Vite, Express, and tooling
 - `-i <file>`: Input file (default: stdin)
 - `-o <file>`: Output file (default: stdout)
 - `-h`: Show help
@@ -94,6 +96,9 @@ htmlfmt -analyze -i complex-page.html > suggestions.json
 
 # Export HTML as zip with external resources
 htmlfmt -export -i page.html -o extracted.zip
+
+# Export as Node.js project
+htmlfmt -nodejs -i page.html -o my-project.zip
 
 # Process multiple files
 for file in *.html; do
@@ -149,6 +154,83 @@ htmlfmt -export -i webpage.html -o complete.zip
 # - All external CSS/JS files downloaded
 # - HTML with links rewritten to local files
 ```
+
+## Node.js Project Export
+
+Transform your HTML into a production-ready Node.js application with modern tooling and development workflows.
+
+### Features
+
+- ⚡ **Vite Build System** - Fast development server and optimized production builds
+- 🚀 **Express Server** - Production-ready web server for deployment
+- 🔥 **Hot Module Reloading** - Instant updates during development
+- 📝 **ESLint** - Code quality and consistency checking
+- 💅 **Prettier** - Automatic code formatting
+- 📘 **TypeScript Support** - Type safety and editor intelligence
+- 📁 **Organized Structure** - Clean separation of concerns with src/, public/, dist/
+
+### Usage
+
+**Web Interface:**
+1. Select "Export as Node.js Project" mode
+2. Paste or upload your HTML
+3. Click "Process" to download the project
+
+**CLI:**
+```bash
+htmlfmt -nodejs -i page.html -o my-project.zip
+```
+
+### Getting Started
+
+After downloading and extracting:
+
+```bash
+cd my-project
+npm install
+npm run dev          # Start development server
+npm run build        # Build for production
+npm run serve        # Serve production build
+npm run lint         # Check code quality
+npm run format       # Format code
+```
+
+### Project Structure
+
+```
+my-project/
+├── package.json          # Dependencies and scripts
+├── vite.config.js        # Vite build configuration
+├── server.js             # Express production server
+├── .eslintrc.json        # ESLint configuration
+├── .prettierrc           # Prettier configuration
+├── tsconfig.json         # TypeScript configuration
+├── .gitignore            # Git ignore rules
+├── README.md             # Project documentation
+└── src/
+    ├── index.html        # Main HTML file
+    ├── styles/
+    │   ├── main.css      # Your inline styles
+    │   └── external/     # Downloaded external CSS
+    └── scripts/
+        ├── main.js       # Your inline scripts
+        └── external/     # Downloaded external JS
+```
+
+### Development Workflow
+
+1. **Development**: `npm run dev` - Start Vite dev server with hot reload
+2. **Building**: `npm run build` - Create optimized production build
+3. **Preview**: `npm run preview` - Preview production build locally
+4. **Production**: `npm run serve` - Start Express server for production
+
+### Customization
+
+- **Styling**: Edit files in `src/styles/`
+- **JavaScript**: Edit files in `src/scripts/`
+- **HTML**: Edit `src/index.html`
+- **Build config**: Modify `vite.config.js`
+- **Server config**: Modify `server.js`
 
 ### Web Interface
 

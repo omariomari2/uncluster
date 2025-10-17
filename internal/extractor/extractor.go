@@ -390,3 +390,64 @@ func updateAttribute(n *html.Node, key, value string) {
 	// Attribute not found, add it
 	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: value})
 }
+
+// RewriteForNodeJS rewrites HTML links for Node.js project structure
+func (e *ExtractedContent) RewriteForNodeJS() string {
+	// Parse the HTML
+	doc, err := html.Parse(strings.NewReader(e.HTML))
+	if err != nil {
+		// If parsing fails, return original HTML
+		return e.HTML
+	}
+
+	// Rewrite links for Node.js structure
+	rewriteLinksForNodeJS(doc)
+
+	// Convert back to HTML
+	var buf bytes.Buffer
+	err = html.Render(&buf, doc)
+	if err != nil {
+		// If rendering fails, return original HTML
+		return e.HTML
+	}
+
+	return buf.String()
+}
+
+// rewriteLinksForNodeJS recursively rewrites links for Node.js project structure
+func rewriteLinksForNodeJS(n *html.Node) {
+	if n.Type == html.ElementNode {
+		if n.Data == "link" {
+			// Rewrite stylesheet links
+			href := getAttribute(n, "href")
+			if href != "" {
+				if href == "style.css" {
+					// Inline styles -> /styles/main.css
+					updateAttribute(n, "href", "/styles/main.css")
+				} else if strings.HasPrefix(href, "external/css/") {
+					// External CSS -> /styles/external/filename
+					filename := strings.TrimPrefix(href, "external/css/")
+					updateAttribute(n, "href", "/styles/external/"+filename)
+				}
+			}
+		} else if n.Data == "script" {
+			// Rewrite script sources
+			src := getAttribute(n, "src")
+			if src != "" {
+				if src == "script.js" {
+					// Inline scripts -> /scripts/main.js
+					updateAttribute(n, "src", "/scripts/main.js")
+				} else if strings.HasPrefix(src, "external/js/") {
+					// External JS -> /scripts/external/filename
+					filename := strings.TrimPrefix(src, "external/js/")
+					updateAttribute(n, "src", "/scripts/external/"+filename)
+				}
+			}
+		}
+	}
+
+	// Recursively process child nodes
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		rewriteLinksForNodeJS(c)
+	}
+}

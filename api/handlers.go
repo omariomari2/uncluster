@@ -6,9 +6,11 @@ import (
 	"htmlfmt/internal/converter"
 	"htmlfmt/internal/extractor"
 	"htmlfmt/internal/formatter"
+	"htmlfmt/internal/nodejs"
 	"htmlfmt/internal/zipper"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -50,6 +52,9 @@ func setupRoutes(app *fiber.App) {
 
 	// Export to zip endpoint
 	api.Post("/export", handleExport)
+
+	// Export to Node.js project endpoint
+	api.Post("/export-nodejs", handleExportNodeJS)
 
 	// Health check
 	api.Get("/health", handleHealth)
@@ -213,6 +218,92 @@ func handleExport(c *fiber.Ctx) error {
 
 	log.Printf("✅ Export completed successfully (zip size: %d bytes)", len(zipData))
 	// Return the zip file
+	return c.Send(zipData)
+}
+
+// handleExportNodeJS handles Node.js project export requests
+func handleExportNodeJS(c *fiber.Ctx) error {
+	log.Printf("📦 Node.js project export request received from %s", c.IP())
+
+	var req FormatRequest
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("❌ Request parsing failed: %v", err)
+		return c.Status(400).JSON(Response{
+			Success: false,
+			Error:   "Invalid request body",
+		})
+	}
+
+	if strings.TrimSpace(req.HTML) == "" {
+		log.Printf("❌ Empty HTML content")
+		return c.Status(400).JSON(Response{
+			Success: false,
+			Error:   "HTML content is required",
+		})
+	}
+
+	log.Printf("📄 Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
+
+	// Extract content
+	extracted, err := extractor.Extract(req.HTML)
+	if err != nil {
+		log.Printf("❌ Extraction failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	log.Printf("📊 Extraction results - HTML: %d chars, CSS: %d chars, JS: %d chars",
+		len(extracted.HTML), len(extracted.CSS), len(extracted.JS))
+	log.Printf("📦 External resources - CSS: %d files, JS: %d files",
+		len(extracted.ExternalCSS), len(extracted.ExternalJS))
+
+	// Rewrite HTML for Node.js structure
+	rewrittenHTML := extracted.RewriteForNodeJS()
+
+	// Generate project name from timestamp
+	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
+
+	// Build Node.js project
+	config := &nodejs.ProjectConfig{
+		ProjectName:    projectName,
+		PackageManager: "npm",
+		HTML:           rewrittenHTML,
+		CSS:            extracted.CSS,
+		JS:             extracted.JS,
+		ExternalCSS:    extracted.ExternalCSS,
+		ExternalJS:     extracted.ExternalJS,
+	}
+
+	log.Printf("🏗️ Generating Node.js project: %s", projectName)
+	projectFiles, err := nodejs.GenerateProject(config)
+	if err != nil {
+		log.Printf("❌ Project generation failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	// Create zip
+	log.Printf("🗜️ Creating zip archive...")
+	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
+	if err != nil {
+		log.Printf("❌ Zip creation failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	log.Printf("✅ Node.js project export completed (size: %d bytes)", len(zipData))
+
+	// Set headers
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", projectName))
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+
 	return c.Send(zipData)
 }
 

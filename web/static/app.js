@@ -95,6 +95,14 @@ async function processHTML() {
                 },
                 body: JSON.stringify({ html: html })
             });
+        } else if (mode === 'export-nodejs') {
+            response = await fetch(`${API_BASE}/api/export-nodejs`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ html: html })
+            });
         } else {
             throw new Error('Invalid mode selected');
         }
@@ -133,6 +141,36 @@ async function processHTML() {
             downloadBtn.disabled = false;
             
             showToast('Zip file downloaded successfully!');
+        } else if (mode === 'export-nodejs') {
+            // Handle Node.js project download
+            console.log('📦 Processing Node.js project response...');
+            const blob = await response.blob();
+            console.log('📦 Blob created:', {
+                size: blob.size,
+                type: blob.type
+            });
+            
+            const url = URL.createObjectURL(blob);
+            console.log('🔗 Download URL created:', url.substring(0, 50) + '...');
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `nodejs-project-${Date.now()}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ Node.js project download triggered');
+            
+            // Show success message in output area
+            currentOutput = 'Node.js project downloaded successfully! The project includes:\n- package.json (dependencies and scripts)\n- vite.config.js (build configuration)\n- server.js (Express production server)\n- src/ directory with organized files\n- ESLint, Prettier, and TypeScript configs\n\nTo get started:\n1. Unzip the file\n2. cd project-name\n3. npm install\n4. npm run dev';
+            outputCode.textContent = currentOutput;
+            
+            // Enable download button (for re-downloading)
+            downloadBtn.disabled = false;
+            
+            showToast('Node.js project downloaded successfully!');
         } else {
             // Handle JSON response for format and jsx modes
             const result = await response.json();
