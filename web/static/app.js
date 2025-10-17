@@ -1,6 +1,7 @@
 // Application state
 let currentOutput = '';
 let currentSuggestions = [];
+let uploadedHTML = '';
 
 // DOM elements
 const htmlInput = document.getElementById('htmlInput');
@@ -15,6 +16,12 @@ const suggestionsContent = document.getElementById('suggestionsContent');
 const toggleSuggestions = document.getElementById('toggleSuggestions');
 const loadingOverlay = document.getElementById('loadingOverlay');
 const toast = document.getElementById('toast');
+
+// API base resolution: use same-origin if on :3000, otherwise target backend on :3000
+const API_BASE = (location.hostname === 'localhost' && location.port !== '3000')
+    ? 'http://localhost:3000'
+    : '';
+console.log('🔧 API_BASE resolved to:', API_BASE || '(same-origin)');
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', function() {
@@ -36,13 +43,23 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 suggestionsSection.style.display = 'none';
             }
+            
+            // Disable copy button for export mode
+            if (this.value === 'export') {
+                copyBtn.disabled = true;
+                copyBtn.style.opacity = '0.5';
+            } else {
+                copyBtn.disabled = false;
+                copyBtn.style.opacity = '1';
+            }
         });
     });
 });
 
 // Process HTML based on selected mode
 async function processHTML() {
-    const html = htmlInput.value.trim();
+    const typedHtml = htmlInput.value.trim();
+    const html = typedHtml || uploadedHTML.trim();
     if (!html) {
         showToast('Please enter some HTML content', 'error');
         return;
@@ -55,7 +72,7 @@ async function processHTML() {
     try {
         let response;
         if (mode === 'format') {
-            response = await fetch('/api/format', {
+            response = await fetch(`${API_BASE}/api/format`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -63,40 +80,83 @@ async function processHTML() {
                 body: JSON.stringify({ html: html })
             });
         } else if (mode === 'jsx') {
-            response = await fetch('/api/convert', {
+            response = await fetch(`${API_BASE}/api/convert`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ html: html })
             });
+        } else if (mode === 'export') {
+            response = await fetch(`${API_BASE}/api/export`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ html: html })
+            });
+        } else {
+            throw new Error('Invalid mode selected');
         }
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const result = await response.json();
-        
-        if (!result.success) {
-            throw new Error(result.error || 'Processing failed');
-        }
-
-        currentOutput = result.data;
-        outputCode.textContent = currentOutput;
-        
-        // Enable output buttons
-        copyBtn.disabled = false;
-        downloadBtn.disabled = false;
-        
-        // If JSX mode, also get component suggestions
-        if (mode === 'jsx') {
-            await getComponentSuggestions(html);
+        if (mode === 'export') {
+            // Handle zip file download
+            console.log('📦 Processing zip file response...');
+            const blob = await response.blob();
+            console.log('📦 Blob created:', {
+                size: blob.size,
+                type: blob.type
+            });
+            
+            const url = URL.createObjectURL(blob);
+            console.log('🔗 Download URL created:', url.substring(0, 50) + '...');
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'extracted.zip';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ Zip file download triggered');
+            
+            // Show success message in output area
+            currentOutput = 'Zip file downloaded successfully! The archive contains:\n- index.html (cleaned HTML)\n- style.css (extracted styles)\n- script.js (extracted scripts)';
+            outputCode.textContent = currentOutput;
+            
+            // Enable download button (for re-downloading)
+            downloadBtn.disabled = false;
+            
+            showToast('Zip file downloaded successfully!');
         } else {
-            suggestionsSection.style.display = 'none';
+            // Handle JSON response for format and jsx modes
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Processing failed');
+            }
+
+            currentOutput = result.data;
+            outputCode.textContent = currentOutput;
+            
+            // Enable output buttons
+            copyBtn.disabled = false;
+            downloadBtn.disabled = false;
+            
+            // If JSX mode, also get component suggestions
+            if (mode === 'jsx') {
+                await getComponentSuggestions(html);
+            } else {
+                suggestionsSection.style.display = 'none';
+            }
+            
+            showToast('Processing completed successfully!');
         }
-        
-        showToast('Processing completed successfully!');
         
     } catch (error) {
         console.error('Error processing HTML:', error);
@@ -110,7 +170,7 @@ async function processHTML() {
 // Get component suggestions for JSX mode
 async function getComponentSuggestions(html) {
     try {
-        const response = await fetch('/api/analyze', {
+        const response = await fetch(`${API_BASE}/api/analyze`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -219,8 +279,8 @@ function handleFileUpload(event) {
 
     const reader = new FileReader();
     reader.onload = function(e) {
-        htmlInput.value = e.target.result;
-        autoResizeTextarea();
+        uploadedHTML = String(e.target.result || '');
+        showToast(`Loaded file: ${file.name}`);
     };
     reader.readAsText(file);
 }

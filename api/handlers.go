@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"htmlfmt/internal/analyzer"
 	"htmlfmt/internal/converter"
+	"htmlfmt/internal/extractor"
 	"htmlfmt/internal/formatter"
+	"htmlfmt/internal/zipper"
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -25,9 +29,9 @@ type Response struct {
 }
 
 type ComponentResponse struct {
-	Success     bool                        `json:"success"`
+	Success     bool                           `json:"success"`
 	Suggestions []analyzer.ComponentSuggestion `json:"suggestions,omitempty"`
-	Error       string                      `json:"error,omitempty"`
+	Error       string                         `json:"error,omitempty"`
 }
 
 // setupRoutes configures all API routes
@@ -43,6 +47,9 @@ func setupRoutes(app *fiber.App) {
 
 	// Analyze components endpoint
 	api.Post("/analyze", handleAnalyze)
+
+	// Export to zip endpoint
+	api.Post("/export", handleExport)
 
 	// Health check
 	api.Get("/health", handleHealth)
@@ -148,6 +155,63 @@ func handleAnalyze(c *fiber.Ctx) error {
 		Success:     true,
 		Suggestions: suggestions,
 	})
+}
+
+// handleExport extracts CSS and JS from HTML and returns a zip file
+func handleExport(c *fiber.Ctx) error {
+	log.Printf("📦 Export request received from %s", c.IP())
+
+	var req FormatRequest
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("❌ Export request parsing failed: %v", err)
+		return c.Status(400).JSON(Response{
+			Success: false,
+			Error:   "Invalid request body",
+		})
+	}
+
+	// Validate input
+	if strings.TrimSpace(req.HTML) == "" {
+		log.Printf("❌ Export request: empty HTML content")
+		return c.Status(400).JSON(Response{
+			Success: false,
+			Error:   "HTML content is required",
+		})
+	}
+
+	log.Printf("📄 Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
+	// Extract CSS and JS from HTML
+	extracted, err := extractor.Extract(req.HTML)
+	if err != nil {
+		log.Printf("❌ Extraction failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	log.Printf("📊 Extraction results - HTML: %d chars, CSS: %d chars, JS: %d chars",
+		len(extracted.HTML), len(extracted.CSS), len(extracted.JS))
+
+	// Create zip archive
+	log.Printf("🗜️ Creating zip archive...")
+	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.CSS, extracted.JS)
+	if err != nil {
+		log.Printf("❌ Zip creation failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	// Set headers for file download
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", "attachment; filename=\"extracted.zip\"")
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+
+	log.Printf("✅ Export completed successfully (zip size: %d bytes)", len(zipData))
+	// Return the zip file
+	return c.Send(zipData)
 }
 
 // handleHealth returns server health status
