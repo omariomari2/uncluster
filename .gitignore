@@ -8,9 +8,6 @@ htmlfmt
 htmlfmt-server
 htmlfmt.exe
 htmlfmt-server.exe
-htmlfmt-linux
-htmlfmt-macos
-htmlfmt-windows
 
 # Test binary, built with `go test -c`
 *.test
@@ -19,12 +16,12 @@ htmlfmt-windows
 *.out
 
 # Dependency directories (remove the comment below to include it)
-vendor/
+# vendor/
 
 # Go workspace file
 go.work
 
-# IDE and Editor files
+# IDE files
 .vscode/
 .idea/
 *.swp
@@ -45,12 +42,18 @@ Thumbs.db
 *.temp
 *.log
 
-# Test files and outputs
-test.html
-test-output.jsx
-test-*.html
-test-*.jsx
-*-output.*
+# Test files and directories
+test-*
+debug-*
+*-test.zip
+*-export.zip
+*-extracted/
+debug-extracted/
+
+# Build artifacts
+dist/
+build/
+bin/
 
 # Environment files
 .env
@@ -59,33 +62,41 @@ test-*.jsx
 .env.test.local
 .env.production.local
 
-# Node modules (if any frontend build tools are added later)
+# Node modules (if any frontend dependencies are added)
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build artifacts
-dist/
-build/
-
 # Coverage reports
 coverage/
+*.cover
 *.coverprofile
 
-# Air (live reload) files
-.air.toml
+# Profiling files
+*.prof
+
+# Air live reload (if used)
 tmp/
+
+# Local development files
+*.local
+local-*
+
+# Documentation build files
+docs/_build/
+site/
 
 # Backup files
 *.bak
 *.backup
+*.old
 
-# Archive files
+# Archive files (unless they're intentionally tracked)
 *.zip
 *.tar.gz
 *.rar
+*.7z
 
-# Local configuration files
-config.local.json
-settings.local.json
+# Plan files
+*.plan.md

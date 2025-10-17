@@ -3,7 +3,9 @@ package extractor
 import (
 	"bytes"
 	"fmt"
+	"htmlfmt/internal/fetcher"
 	"htmlfmt/internal/formatter"
+	"log"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -11,9 +13,11 @@ import (
 
 // ExtractedContent represents the separated HTML, CSS, and JS content
 type ExtractedContent struct {
-	HTML string
-	CSS  string
-	JS   string
+	HTML        string                    // cleaned HTML with rewritten links
+	CSS         string                    // inline CSS from <style> tags
+	JS          string                    // inline JS from <script> tags
+	ExternalCSS []fetcher.FetchedResource // downloaded external CSS files
+	ExternalJS  []fetcher.FetchedResource // downloaded external JS files
 }
 
 // Extract separates CSS and JS from HTML and returns cleaned HTML with proper linking
@@ -27,13 +31,32 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 	var cssContent strings.Builder
 	var jsContent strings.Builder
 
-	// Extract CSS and JS content
+	// Extract CSS and JS content from inline tags
 	extractStylesAndScripts(doc, &cssContent, &jsContent)
 
-	// Remove style and script tags from the document
+	// Find external resource URLs
+	cssURLs, jsURLs := findExternalResourceURLs(doc)
+
+	log.Printf("🔍 Found %d external CSS URLs and %d external JS URLs", len(cssURLs), len(jsURLs))
+
+	// Fetch external resources
+	var externalCSS []fetcher.FetchedResource
+	var externalJS []fetcher.FetchedResource
+
+	if len(cssURLs) > 0 {
+		externalCSS = fetcher.FetchExternalResources(cssURLs, "css")
+	}
+	if len(jsURLs) > 0 {
+		externalJS = fetcher.FetchExternalResources(jsURLs, "js")
+	}
+
+	// Rewrite external links to point to local files
+	rewriteExternalLinks(doc, externalCSS, externalJS)
+
+	// Remove inline style and script tags from the document
 	removeStyleAndScriptTags(doc)
 
-	// Add link and script tags to the document
+	// Add link and script tags for inline content
 	addLinksToDocument(doc)
 
 	// Convert the modified document back to HTML
@@ -50,9 +73,11 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 	}
 
 	return &ExtractedContent{
-		HTML: formattedHTML,
-		CSS:  cssContent.String(),
-		JS:   jsContent.String(),
+		HTML:        formattedHTML,
+		CSS:         cssContent.String(),
+		JS:          jsContent.String(),
+		ExternalCSS: externalCSS,
+		ExternalJS:  externalJS,
 	}, nil
 }
 
@@ -260,4 +285,108 @@ func addJSToBody(body *html.Node) {
 		},
 	}
 	body.AppendChild(script)
+}
+
+// findExternalResourceURLs finds all external CSS and JS URLs in the document
+func findExternalResourceURLs(doc *html.Node) ([]string, []string) {
+	var cssURLs []string
+	var jsURLs []string
+
+	findExternalURLs(doc, &cssURLs, &jsURLs)
+	return cssURLs, jsURLs
+}
+
+// findExternalURLs recursively searches for external resource URLs
+func findExternalURLs(n *html.Node, cssURLs, jsURLs *[]string) {
+	if n.Type == html.ElementNode {
+		if n.Data == "link" {
+			// Check for external stylesheet links
+			href := getAttribute(n, "href")
+			rel := getAttribute(n, "rel")
+			if href != "" && rel == "stylesheet" && isExternalURL(href) {
+				*cssURLs = append(*cssURLs, href)
+			}
+		} else if n.Data == "script" {
+			// Check for external script sources
+			src := getAttribute(n, "src")
+			if src != "" && isExternalURL(src) {
+				*jsURLs = append(*jsURLs, src)
+			}
+		}
+	}
+
+	// Recursively process child nodes
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		findExternalURLs(c, cssURLs, jsURLs)
+	}
+}
+
+// getAttribute gets the value of an attribute from a node
+func getAttribute(n *html.Node, key string) string {
+	for _, attr := range n.Attr {
+		if attr.Key == key {
+			return attr.Val
+		}
+	}
+	return ""
+}
+
+// isExternalURL checks if a URL is external (starts with http:// or https://)
+func isExternalURL(urlStr string) bool {
+	return strings.HasPrefix(urlStr, "http://") || strings.HasPrefix(urlStr, "https://")
+}
+
+// rewriteExternalLinks rewrites external links to point to local files
+func rewriteExternalLinks(doc *html.Node, externalCSS, externalJS []fetcher.FetchedResource) {
+	rewriteLinks(doc, externalCSS, externalJS)
+}
+
+// rewriteLinks recursively rewrites external links to local paths
+func rewriteLinks(n *html.Node, externalCSS, externalJS []fetcher.FetchedResource) {
+	if n.Type == html.ElementNode {
+		if n.Data == "link" {
+			// Rewrite external stylesheet links
+			href := getAttribute(n, "href")
+			if href != "" && isExternalURL(href) {
+				// Find matching external CSS resource
+				for _, resource := range externalCSS {
+					if resource.URL == href && resource.Error == nil {
+						// Update the href attribute
+						updateAttribute(n, "href", "external/css/"+resource.Filename)
+						break
+					}
+				}
+			}
+		} else if n.Data == "script" {
+			// Rewrite external script sources
+			src := getAttribute(n, "src")
+			if src != "" && isExternalURL(src) {
+				// Find matching external JS resource
+				for _, resource := range externalJS {
+					if resource.URL == src && resource.Error == nil {
+						// Update the src attribute
+						updateAttribute(n, "src", "external/js/"+resource.Filename)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Recursively process child nodes
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		rewriteLinks(c, externalCSS, externalJS)
+	}
+}
+
+// updateAttribute updates or adds an attribute to a node
+func updateAttribute(n *html.Node, key, value string) {
+	for i, attr := range n.Attr {
+		if attr.Key == key {
+			n.Attr[i].Val = value
+			return
+		}
+	}
+	// Attribute not found, add it
+	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: value})
 }

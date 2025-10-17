@@ -7,6 +7,8 @@ A powerful tool built with Go that formats clustered HTML with proper indentatio
 - **HTML Formatting**: Transform clustered HTML into properly formatted code with tab indentation
 - **JSX Conversion**: Convert HTML to JSX with proper attribute transformations
 - **Component Analysis**: Automatically suggest reusable React components from HTML patterns
+- **Zip Export**: Extract inline styles/scripts and download external resources into organized zip files
+- **External Resource Fetching**: Automatically download external CSS and JS files from URLs
 - **Dual Interface**: Both command-line tool and web interface
 - **Fast Performance**: Built with Go for excellent performance
 - **Single Binary**: No runtime dependencies required
@@ -72,6 +74,7 @@ echo '<div class="card"><h2>Title</h2></div>' | htmlfmt -jsx
 - `-format`: Format HTML with proper indentation
 - `-jsx`: Convert HTML to JSX
 - `-analyze`: Analyze HTML and suggest components (outputs JSON)
+- `-export`: Export HTML as zip with separated CSS/JS and external resources
 - `-i <file>`: Input file (default: stdin)
 - `-o <file>`: Output file (default: stdout)
 - `-h`: Show help
@@ -89,10 +92,62 @@ htmlfmt -jsx -i template.html -o Template.jsx
 # Get component suggestions as JSON
 htmlfmt -analyze -i complex-page.html > suggestions.json
 
+# Export HTML as zip with external resources
+htmlfmt -export -i page.html -o extracted.zip
+
 # Process multiple files
 for file in *.html; do
     htmlfmt -format -i "$file" -o "formatted_$file"
 done
+```
+
+## External Resource Fetching
+
+The zip export feature automatically downloads external CSS and JavaScript files referenced in your HTML, creating a complete offline package.
+
+### How It Works
+
+1. **Detection**: Scans HTML for `<link rel="stylesheet" href="...">` and `<script src="...">` tags with external URLs
+2. **Download**: Fetches external resources using HTTP client with 10-second timeout
+3. **Organization**: Places external files in `external/css/` and `external/js/` folders
+4. **Rewriting**: Updates HTML links to point to local files instead of external URLs
+
+### Zip Structure
+
+```
+extracted.zip/
+├── index.html                    # Cleaned HTML with rewritten links
+├── style.css                     # Inline styles from <style> tags
+├── script.js                     # Inline scripts from <script> tags
+└── external/
+    ├── css/
+    │   ├── bootstrap.min.css     # Downloaded external CSS
+    │   ├── custom.css
+    │   └── ...
+    └── js/
+        ├── jquery.min.js         # Downloaded external JS
+        ├── app.js
+        └── ...
+```
+
+### Features
+
+- **Automatic Detection**: Finds external resources without configuration
+- **Error Handling**: Skips failed downloads and continues processing
+- **Safe Filenames**: Sanitizes URLs to create filesystem-safe filenames
+- **Duplicate Handling**: Prevents filename conflicts with counters
+- **Network Requirements**: Requires internet access for external resource downloads
+
+### Example
+
+```bash
+# Export HTML with external resources
+htmlfmt -export -i webpage.html -o complete.zip
+
+# The zip will contain:
+# - All inline styles and scripts extracted
+# - All external CSS/JS files downloaded
+# - HTML with links rewritten to local files
 ```
 
 ### Web Interface
