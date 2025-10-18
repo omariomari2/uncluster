@@ -164,13 +164,13 @@ async function processHTML() {
             console.log('✅ Node.js project download triggered');
             
             // Show success message in output area
-            currentOutput = 'Node.js project downloaded successfully! The project includes:\n- package.json (dependencies and scripts)\n- vite.config.js (build configuration)\n- server.js (Express production server)\n- src/ directory with organized files\n- ESLint, Prettier, and TypeScript configs\n\nTo get started:\n1. Unzip the file\n2. cd project-name\n3. npm install\n4. npm run dev';
+            currentOutput = 'React TypeScript project downloaded successfully! The project includes:\n- package.json (React, TypeScript, Vite dependencies)\n- vite.config.js (Vite + React configuration)\n- server.js (Express production server)\n- src/ directory with React components\n- TypeScript, ESLint, and Prettier configs\n- JSX/TSX components converted from your HTML\n\nTo get started:\n1. Unzip the file\n2. cd project-name\n3. npm install\n4. npm run dev';
             outputCode.textContent = currentOutput;
             
             // Enable download button (for re-downloading)
             downloadBtn.disabled = false;
             
-            showToast('Node.js project downloaded successfully!');
+            showToast('React TypeScript project downloaded successfully!');
         } else {
             // Handle JSON response for format and jsx modes
             const result = await response.json();

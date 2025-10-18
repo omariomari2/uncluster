@@ -8,7 +8,7 @@ A powerful tool built with Go that formats clustered HTML with proper indentatio
 - **JSX Conversion**: Convert HTML to JSX with proper attribute transformations
 - **Component Analysis**: Automatically suggest reusable React components from HTML patterns
 - **Zip Export**: Extract inline styles/scripts and download external resources into organized zip files
-- **Node.js Project Export**: Transform HTML into production-ready Node.js applications with Vite, Express, and modern tooling
+- **React TypeScript Export**: Transform HTML into production-ready React TypeScript applications with Vite, Express, and modern tooling
 - **External Resource Fetching**: Automatically download external CSS and JS files from URLs
 - **Dual Interface**: Both command-line tool and web interface
 - **Fast Performance**: Built with Go for excellent performance
@@ -76,7 +76,7 @@ echo '<div class="card"><h2>Title</h2></div>' | htmlfmt -jsx
 - `-jsx`: Convert HTML to JSX
 - `-analyze`: Analyze HTML and suggest components (outputs JSON)
 - `-export`: Export HTML as zip with separated CSS/JS and external resources
-- `-nodejs`: Export as Node.js project with Vite, Express, and tooling
+- `-nodejs`: Export as React TypeScript project with Vite, Express, and tooling
 - `-i <file>`: Input file (default: stdin)
 - `-o <file>`: Output file (default: stdout)
 - `-h`: Show help
@@ -97,7 +97,7 @@ htmlfmt -analyze -i complex-page.html > suggestions.json
 # Export HTML as zip with external resources
 htmlfmt -export -i page.html -o extracted.zip
 
-# Export as Node.js project
+# Export as React TypeScript project
 htmlfmt -nodejs -i page.html -o my-project.zip
 
 # Process multiple files
@@ -155,19 +155,21 @@ htmlfmt -export -i webpage.html -o complete.zip
 # - HTML with links rewritten to local files
 ```
 
-## Node.js Project Export
+## React TypeScript Project Export
 
-Transform your HTML into a production-ready Node.js application with modern tooling and development workflows.
+Transform your HTML into a production-ready React TypeScript application with modern tooling and development workflows.
 
 ### Features
 
+- ⚛️ **React 18** - Modern React with hooks and concurrent features
+- 📘 **TypeScript** - Type safety and enhanced developer experience
 - ⚡ **Vite Build System** - Fast development server and optimized production builds
 - 🚀 **Express Server** - Production-ready web server for deployment
 - 🔥 **Hot Module Reloading** - Instant updates during development
-- 📝 **ESLint** - Code quality and consistency checking
+- 📝 **ESLint** - Code quality and consistency checking with React rules
 - 💅 **Prettier** - Automatic code formatting
-- 📘 **TypeScript Support** - Type safety and editor intelligence
-- 📁 **Organized Structure** - Clean separation of concerns with src/, public/, dist/
+- 🧩 **Component-based** - Modular JSX/TSX components
+- 📁 **Organized Structure** - Clean separation of concerns with src/, components/, styles/
 
 ### Usage
 
@@ -208,13 +210,15 @@ my-project/
 ├── .gitignore            # Git ignore rules
 ├── README.md             # Project documentation
 └── src/
-    ├── index.html        # Main HTML file
-    ├── styles/
-    │   ├── main.css      # Your inline styles
-    │   └── external/     # Downloaded external CSS
-    └── scripts/
-        ├── main.js       # Your inline scripts
-        └── external/     # Downloaded external JS
+    ├── index.html        # Vite entry HTML
+    ├── main.tsx          # React entry point
+    ├── App.tsx           # Main App component
+    ├── components/
+    │   ├── MainComponent.tsx  # Converted HTML component
+    │   └── Component*.tsx     # Additional components
+    └── styles/
+        ├── main.css      # Your inline styles
+        └── external/     # Downloaded external CSS
 ```
 
 ### Development Workflow
@@ -226,9 +230,10 @@ my-project/
 
 ### Customization
 
+- **Components**: Edit files in `src/components/`
 - **Styling**: Edit files in `src/styles/`
-- **JavaScript**: Edit files in `src/scripts/`
-- **HTML**: Edit `src/index.html`
+- **Main App**: Edit `src/App.tsx`
+- **Entry Point**: Edit `src/main.tsx`
 - **Build config**: Modify `vite.config.js`
 - **Server config**: Modify `server.js`
 

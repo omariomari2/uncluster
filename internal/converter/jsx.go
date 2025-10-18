@@ -1,370 +1,306 @@
 package converter
 
 import (
-	"bytes"
 	"fmt"
-	"golang.org/x/net/html"
+	"htmlfmt/internal/analyzer"
+	"htmlfmt/internal/fetcher"
+	"regexp"
 	"strings"
 )
 
-// ConvertToJSX takes an HTML string and converts it to JSX with proper formatting
-func ConvertToJSX(htmlInput string) (string, error) {
-	// Parse the HTML
-	doc, err := html.Parse(strings.NewReader(htmlInput))
+// JSXConverter handles conversion from HTML to JSX/TSX
+type JSXConverter struct {
+	ExternalCSS []fetcher.FetchedResource
+	ExternalJS  []fetcher.FetchedResource
+}
+
+// ConvertToJSX converts HTML content to JSX/TSX components
+func ConvertToJSX(html, css, js string, externalCSS []fetcher.FetchedResource, externalJS []fetcher.FetchedResource) (string, error) {
+	converter := &JSXConverter{
+		ExternalCSS: externalCSS,
+		ExternalJS:  externalJS,
+	}
+
+	// Convert HTML to JSX
+	jsx, err := converter.convertHTMLToJSX(html)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse HTML: %w", err)
+		return "", fmt.Errorf("failed to convert HTML to JSX: %w", err)
 	}
 
-	// Convert to JSX
-	var buf bytes.Buffer
-	err = convertNodeToJSX(&buf, doc, 0)
-	if err != nil {
-		return "", fmt.Errorf("failed to convert to JSX: %w", err)
-	}
+	// Add CSS imports
+	cssImports := converter.generateCSSImports(css)
 
-	return buf.String(), nil
+	// Add JS functionality
+	jsCode := converter.generateJSCode(js)
+
+	// Combine everything
+	component := fmt.Sprintf(`import React from 'react'
+%s
+
+function MainComponent() {
+  return (
+    <>
+      %s
+    </>
+  )
 }
 
-// convertNodeToJSX recursively converts an HTML node to JSX
-func convertNodeToJSX(buf *bytes.Buffer, n *html.Node, depth int) error {
-	switch n.Type {
-	case html.DocumentNode:
-		// Process all children of document
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if err := convertNodeToJSX(buf, c, depth); err != nil {
-				return err
-			}
-		}
+%s
 
-	case html.ElementNode:
-		// Handle self-closing/void elements
-		if isVoidElement(n.Data) {
-			buf.WriteString(strings.Repeat("\t", depth))
-			buf.WriteString("<")
-			buf.WriteString(convertTagName(n.Data))
-			
-			// Add attributes
-			for _, attr := range n.Attr {
-				buf.WriteString(" ")
-				buf.WriteString(convertAttributeName(attr.Key))
-				buf.WriteString("=")
-				buf.WriteString(convertAttributeValue(attr.Val))
-			}
-			buf.WriteString(" />\n")
-		} else {
-			// Opening tag
-			buf.WriteString(strings.Repeat("\t", depth))
-			buf.WriteString("<")
-			buf.WriteString(convertTagName(n.Data))
-			
-			// Add attributes
-			for _, attr := range n.Attr {
-				buf.WriteString(" ")
-				buf.WriteString(convertAttributeName(attr.Key))
-				buf.WriteString("=")
-				buf.WriteString(convertAttributeValue(attr.Val))
-			}
-			buf.WriteString(">")
+export default MainComponent
+`, cssImports, jsx, jsCode)
 
-			// Check if element has only text content
-			hasOnlyText := hasOnlyTextChildren(n)
-			
-			if !hasOnlyText && hasChildren(n) {
-				buf.WriteString("\n")
-			}
-
-			// Process children
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if err := convertNodeToJSX(buf, c, depth+1); err != nil {
-					return err
-				}
-			}
-
-			// Closing tag
-			if !hasOnlyText && hasChildren(n) {
-				buf.WriteString(strings.Repeat("\t", depth))
-			}
-			buf.WriteString("</")
-			buf.WriteString(convertTagName(n.Data))
-			buf.WriteString(">\n")
-		}
-
-	case html.TextNode:
-		text := strings.TrimSpace(n.Data)
-		if text != "" {
-			// Only add indentation if this text node is not the only child
-			parent := n.Parent
-			if parent != nil && !hasOnlyTextChildren(parent) {
-				buf.WriteString(strings.Repeat("\t", depth))
-			}
-			buf.WriteString(text)
-			if parent != nil && !hasOnlyTextChildren(parent) {
-				buf.WriteString("\n")
-			}
-		}
-
-	case html.CommentNode:
-		buf.WriteString(strings.Repeat("\t", depth))
-		buf.WriteString("{/* ")
-		buf.WriteString(n.Data)
-		buf.WriteString(" */}\n")
-	}
-
-	return nil
+	return component, nil
 }
 
-// convertTagName converts HTML tag names to JSX format
-func convertTagName(tagName string) string {
-	// Convert to lowercase for consistency
-	tagName = strings.ToLower(tagName)
-	
-	// Handle special cases
-	switch tagName {
-	case "class":
-		return "className"
-	default:
-		return tagName
-	}
+// convertHTMLToJSX converts HTML string to JSX
+func (c *JSXConverter) convertHTMLToJSX(html string) (string, error) {
+	// Remove DOCTYPE and html/head/body tags, keep only the content
+	html = c.cleanHTML(html)
+
+	// Convert HTML attributes to JSX
+	jsx := c.convertAttributes(html)
+
+	// Convert self-closing tags
+	jsx = c.convertSelfClosingTags(jsx)
+
+	// Convert class to className
+	jsx = c.convertClassToClassName(jsx)
+
+	// Convert style attributes
+	jsx = c.convertStyleAttributes(jsx)
+
+	// Convert event handlers
+	jsx = c.convertEventHandlers(jsx)
+
+	// Convert external resource links
+	jsx = c.convertExternalResources(jsx)
+
+	return jsx, nil
 }
 
-// convertAttributeName converts HTML attribute names to JSX format
-func convertAttributeName(attrName string) string {
-	// Handle special JSX attribute names
-	switch strings.ToLower(attrName) {
-	case "class":
-		return "className"
-	case "for":
-		return "htmlFor"
-	case "tabindex":
-		return "tabIndex"
-	case "readonly":
-		return "readOnly"
-	case "maxlength":
-		return "maxLength"
-	case "minlength":
-		return "minLength"
-	case "autocomplete":
-		return "autoComplete"
-	case "autofocus":
-		return "autoFocus"
-	case "autoplay":
-		return "autoPlay"
-	case "autosave":
-		return "autoSave"
-	case "cellpadding":
-		return "cellPadding"
-	case "cellspacing":
-		return "cellSpacing"
-	case "colspan":
-		return "colSpan"
-	case "datetime":
-		return "dateTime"
-	case "enctype":
-		return "encType"
-	case "formaction":
-		return "formAction"
-	case "formenctype":
-		return "formEncType"
-	case "formmethod":
-		return "formMethod"
-	case "formnovalidate":
-		return "formNoValidate"
-	case "formtarget":
-		return "formTarget"
-	case "frameborder":
-		return "frameBorder"
-	case "hreflang":
-		return "hrefLang"
-	case "http-equiv":
-		return "httpEquiv"
-	case "inputmode":
-		return "inputMode"
-	case "ismap":
-		return "isMap"
-	case "itemid":
-		return "itemID"
-	case "itemprop":
-		return "itemProp"
-	case "itemref":
-		return "itemRef"
-	case "itemscope":
-		return "itemScope"
-	case "itemtype":
-		return "itemType"
-	case "marginheight":
-		return "marginHeight"
-	case "marginwidth":
-		return "marginWidth"
-	case "mediagroup":
-		return "mediaGroup"
-	case "novalidate":
-		return "noValidate"
-	case "radiogroup":
-		return "radioGroup"
-	case "rowspan":
-		return "rowSpan"
-	case "spellcheck":
-		return "spellCheck"
-	case "srcdoc":
-		return "srcDoc"
-	case "srclang":
-		return "srcLang"
-	case "srcset":
-		return "srcSet"
-	case "usemap":
-		return "useMap"
-	default:
-		// Convert kebab-case to camelCase
-		return toCamelCase(attrName)
-	}
+// cleanHTML removes unnecessary HTML structure
+func (c *JSXConverter) cleanHTML(html string) string {
+	// Remove DOCTYPE
+	html = regexp.MustCompile(`<!DOCTYPE[^>]*>`).ReplaceAllString(html, "")
+
+	// Remove html, head, body tags but keep their content
+	html = regexp.MustCompile(`<html[^>]*>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`</html>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<head[^>]*>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`</head>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<body[^>]*>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`</body>`).ReplaceAllString(html, "")
+
+	return strings.TrimSpace(html)
 }
 
-// convertAttributeValue converts HTML attribute values to JSX format
-func convertAttributeValue(value string) string {
-	// Handle style attribute specially
-	if strings.Contains(value, ":") && strings.Contains(value, ";") {
-		return convertStyleToJSX(value)
-	}
-	
-	// Handle boolean attributes
-	booleanAttrs := map[string]bool{
-		"checked": true, "disabled": true, "readonly": true, "required": true,
-		"selected": true, "defer": true, "reversed": true, "autofocus": true,
-		"autoplay": true, "controls": true, "loop": true, "muted": true,
-		"default": true, "novalidate": true, "formnovalidate": true,
-	}
-	
-	if booleanAttrs[strings.ToLower(value)] {
-		return value
-	}
-	
-	// Wrap in quotes for string values
-	return `"` + value + `"`
+// convertAttributes converts HTML attributes to JSX format
+func (c *JSXConverter) convertAttributes(html string) string {
+	// Convert for to htmlFor
+	html = regexp.MustCompile(`for="([^"]*)"`).ReplaceAllString(html, `htmlFor="$1"`)
+
+	// Convert tabindex to tabIndex
+	html = regexp.MustCompile(`tabindex="([^"]*)"`).ReplaceAllString(html, `tabIndex="$1"`)
+
+	// Convert readonly to readOnly
+	html = regexp.MustCompile(`readonly`).ReplaceAllString(html, `readOnly`)
+
+	// Convert checked, disabled, etc. to boolean attributes
+	html = regexp.MustCompile(`checked="([^"]*)"`).ReplaceAllString(html, `checked={$1 === "checked"}`)
+	html = regexp.MustCompile(`disabled="([^"]*)"`).ReplaceAllString(html, `disabled={$1 === "disabled"}`)
+	html = regexp.MustCompile(`selected="([^"]*)"`).ReplaceAllString(html, `selected={$1 === "selected"}`)
+
+	return html
 }
 
-// convertStyleToJSX converts inline CSS styles to JSX style objects
-func convertStyleToJSX(style string) string {
-	// Remove extra whitespace
-	style = strings.TrimSpace(style)
-	
-	// Split by semicolon
-	stylePairs := strings.Split(style, ";")
+// convertSelfClosingTags converts self-closing HTML tags to JSX format
+func (c *JSXConverter) convertSelfClosingTags(html string) string {
+	selfClosingTags := []string{"br", "hr", "img", "input", "meta", "link", "area", "base", "col", "embed", "source", "track", "wbr"}
+
+	for _, tag := range selfClosingTags {
+		// Convert <tag> to <tag />
+		pattern := fmt.Sprintf(`<%s([^>]*)>`, tag)
+		replacement := fmt.Sprintf(`<%s$1 />`, tag)
+		html = regexp.MustCompile(pattern).ReplaceAllString(html, replacement)
+	}
+
+	return html
+}
+
+// convertClassToClassName converts class attributes to className
+func (c *JSXConverter) convertClassToClassName(html string) string {
+	return regexp.MustCompile(`class="([^"]*)"`).ReplaceAllString(html, `className="$1"`)
+}
+
+// convertStyleAttributes converts style attributes to JSX format
+func (c *JSXConverter) convertStyleAttributes(html string) string {
+	// Convert style="color: red; font-size: 14px" to style={{color: 'red', fontSize: '14px'}}
+	stylePattern := `style="([^"]*)"`
+	html = regexp.MustCompile(stylePattern).ReplaceAllStringFunc(html, func(match string) string {
+		styleContent := regexp.MustCompile(`style="([^"]*)"`).FindStringSubmatch(match)[1]
+		jsxStyle := c.convertStyleString(styleContent)
+		return fmt.Sprintf(`style={%s}`, jsxStyle)
+	})
+
+	return html
+}
+
+// convertStyleString converts CSS style string to JSX style object
+func (c *JSXConverter) convertStyleString(style string) string {
+	styles := strings.Split(style, ";")
 	var jsxStyles []string
-	
-	for _, pair := range stylePairs {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
+
+	for _, s := range styles {
+		s = strings.TrimSpace(s)
+		if s == "" {
 			continue
 		}
-		
-		// Split by colon
-		parts := strings.SplitN(pair, ":", 2)
+
+		parts := strings.SplitN(s, ":", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		
-		prop := strings.TrimSpace(parts[0])
+
+		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
-		
-		// Convert CSS property to camelCase
-		jsxProp := toCamelCase(prop)
-		
-		// Handle numeric values (remove quotes if it's a number)
-		if isNumeric(value) {
-			jsxStyles = append(jsxStyles, jsxProp+": "+value)
-		} else {
-			jsxStyles = append(jsxStyles, jsxProp+`: "`+value+`"`)
-		}
+
+		// Convert kebab-case to camelCase
+		key = c.kebabToCamel(key)
+
+		jsxStyles = append(jsxStyles, fmt.Sprintf("%s: '%s'", key, value))
 	}
-	
-	return `{{` + strings.Join(jsxStyles, ", ") + `}}`
+
+	return fmt.Sprintf("{%s}", strings.Join(jsxStyles, ", "))
 }
 
-// toCamelCase converts kebab-case strings to camelCase
-func toCamelCase(s string) string {
-	// Handle empty string
-	if s == "" {
-		return s
-	}
-	
-	// Split by hyphens
+// kebabToCamel converts kebab-case to camelCase
+func (c *JSXConverter) kebabToCamel(s string) string {
 	parts := strings.Split(s, "-")
 	if len(parts) == 1 {
 		return s
 	}
-	
-	// First part stays lowercase, rest get capitalized
+
 	result := parts[0]
-	for _, part := range parts[1:] {
-		if part != "" {
-			result += strings.Title(part)
+	for i := 1; i < len(parts); i++ {
+		if len(parts[i]) > 0 {
+			result += strings.ToUpper(parts[i][:1]) + parts[i][1:]
 		}
 	}
-	
+
 	return result
 }
 
-// isNumeric checks if a string represents a numeric value
-func isNumeric(s string) bool {
-	// Remove common CSS units and check if the rest is numeric
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return false
-	}
-	
-	// Check for CSS units
-	units := []string{"px", "em", "rem", "%", "vh", "vw", "pt", "pc", "in", "cm", "mm"}
-	for _, unit := range units {
-		if strings.HasSuffix(s, unit) {
-			// Remove unit and check if the rest is numeric
-			num := strings.TrimSuffix(s, unit)
-			if num == "" {
-				return false
-			}
-			// Simple numeric check (could be improved with proper regex)
-			for _, r := range num {
-				if r < '0' || r > '9' {
-					if r != '.' && r != '-' {
-						return false
-					}
-				}
-			}
-			return true
-		}
-	}
-	
-	// Check if it's a pure number
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			if r != '.' && r != '-' {
-				return false
-			}
-		}
-	}
-	return true
+// convertEventHandlers converts HTML event handlers to JSX format
+func (c *JSXConverter) convertEventHandlers(html string) string {
+	// Convert onclick to onClick
+	html = regexp.MustCompile(`onclick="([^"]*)"`).ReplaceAllString(html, `onClick={() => { $1 }}`)
+	html = regexp.MustCompile(`onchange="([^"]*)"`).ReplaceAllString(html, `onChange={() => { $1 }}`)
+	html = regexp.MustCompile(`onsubmit="([^"]*)"`).ReplaceAllString(html, `onSubmit={() => { $1 }}`)
+	html = regexp.MustCompile(`onload="([^"]*)"`).ReplaceAllString(html, `onLoad={() => { $1 }}`)
+
+	return html
 }
 
-// isVoidElement checks if an element is void (self-closing)
-func isVoidElement(tagName string) bool {
-	voidElements := map[string]bool{
-		"area": true, "base": true, "br": true, "col": true, "embed": true,
-		"hr": true, "img": true, "input": true, "link": true, "meta": true,
-		"param": true, "source": true, "track": true, "wbr": true,
+// convertExternalResources converts external resource links to imports
+func (c *JSXConverter) convertExternalResources(html string) string {
+	// Convert external CSS links to imports (handled in generateCSSImports)
+	// Convert external JS scripts to imports (handled in generateJSCode)
+
+	// Remove external link and script tags as they'll be handled by imports
+	html = regexp.MustCompile(`<link[^>]*rel="stylesheet"[^>]*>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<script[^>]*src="[^"]*"[^>]*></script>`).ReplaceAllString(html, "")
+
+	return html
+}
+
+// generateCSSImports generates CSS import statements
+func (c *JSXConverter) generateCSSImports(css string) string {
+	var imports []string
+
+	// Add main CSS file if there's inline CSS
+	if css != "" {
+		imports = append(imports, `import './styles/main.css'`)
 	}
-	return voidElements[strings.ToLower(tagName)]
-}
 
-// hasChildren checks if a node has child nodes
-func hasChildren(n *html.Node) bool {
-	return n.FirstChild != nil
-}
-
-// hasOnlyTextChildren checks if a node has only text children (no element children)
-func hasOnlyTextChildren(n *html.Node) bool {
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode {
-			return false
+	// Add external CSS imports
+	for _, cssFile := range c.ExternalCSS {
+		if cssFile.Error == nil {
+			imports = append(imports, fmt.Sprintf(`import './styles/external/%s'`, cssFile.Filename))
 		}
 	}
-	return true
+
+	return strings.Join(imports, "\n")
+}
+
+// generateJSCode generates JavaScript code for the component
+func (c *JSXConverter) generateJSCode(js string) string {
+	var jsCode strings.Builder
+
+	// Add inline JavaScript
+	if js != "" {
+		jsCode.WriteString("\n// Inline JavaScript\n")
+		jsCode.WriteString(js)
+		jsCode.WriteString("\n")
+	}
+
+	// Add external JavaScript imports and code
+	for _, jsFile := range c.ExternalJS {
+		if jsFile.Error == nil {
+			jsCode.WriteString(fmt.Sprintf("\n// External JavaScript: %s\n", jsFile.Filename))
+			jsCode.WriteString(jsFile.Content)
+			jsCode.WriteString("\n")
+		}
+	}
+
+	return jsCode.String()
+}
+
+// AnalyzeAndConvert analyzes HTML and converts to optimized JSX components
+func AnalyzeAndConvert(html string) ([]string, error) {
+	// Use existing analyzer to get component suggestions
+	suggestions, err := analyzer.AnalyzeComponents(html)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze HTML: %w", err)
+	}
+
+	var components []string
+
+	// Convert each suggested component to JSX
+	for _, suggestion := range suggestions {
+		// Use the JSXCode from the analyzer if available, otherwise convert from description
+		jsx := suggestion.JSXCode
+		if jsx == "" {
+			// Fallback: create basic JSX from the component info
+			jsx = fmt.Sprintf(`<div className="%s">
+  {/* %s */}
+</div>`, suggestion.TagName, suggestion.Description)
+		}
+
+		componentName := suggestion.Name
+		// Convert component name to PascalCase
+		componentName = strings.Title(strings.ReplaceAll(componentName, "-", " "))
+		componentName = strings.ReplaceAll(componentName, " ", "")
+
+		component := fmt.Sprintf(`import React from 'react'
+
+interface %sProps {
+  // Add props here
+}
+
+function %s(props: %sProps) {
+  return (
+    <>
+      %s
+    </>
+  )
+}
+
+export default %s
+`, componentName, componentName, componentName, jsx, componentName)
+
+		components = append(components, component)
+	}
+
+	return components, nil
 }

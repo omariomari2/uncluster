@@ -5,36 +5,47 @@ const packageJSONTemplate = `{
   "name": "{{.ProjectName}}",
   "version": "1.0.0",
   "type": "module",
-  "description": "Generated Node.js project from HTML",
+  "description": "Generated React TypeScript project from HTML",
   "main": "server.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "serve": "node server.js",
-    "lint": "eslint . --ext .js,.html",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "format": "prettier --write .",
-    "start": "npm run serve"
+    "start": "npm run serve",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "express": "^4.18.2"
   },
   "devDependencies": {
-    "vite": "^5.0.0",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "@vitejs/plugin-react": "^4.2.1",
     "eslint": "^8.55.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
     "prettier": "^3.1.0",
     "typescript": "^5.3.0",
-    "@types/node": "^20.10.0"
+    "vite": "^5.0.0"
   },
-  "keywords": ["html", "vite", "express", "nodejs"],
+  "keywords": ["react", "typescript", "vite", "express", "jsx"],
   "author": "",
   "license": "MIT"
 }`
 
 // viteConfigTemplate is the template for vite.config.js
 const viteConfigTemplate = `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  plugins: [react()],
   root: 'src',
   publicDir: '../public',
   build: {
@@ -42,7 +53,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: 'src/index.html'
+        main: 'src/main.tsx'
       }
     }
   },
@@ -90,19 +101,34 @@ const eslintConfigTemplate = `{
     "node": true
   },
   "extends": [
-    "eslint:recommended"
+    "eslint:recommended",
+    "@typescript-eslint/recommended",
+    "plugin:react-hooks/recommended"
   ],
+  "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "ecmaVersion": "latest",
-    "sourceType": "module"
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
   },
+  "plugins": [
+    "react-refresh",
+    "@typescript-eslint"
+  ],
   "rules": {
     "indent": ["error", 2],
     "linebreak-style": ["error", "unix"],
     "quotes": ["error", "single"],
     "semi": ["error", "always"],
-    "no-unused-vars": "warn",
-    "no-console": "off"
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": "warn",
+    "no-console": "off",
+    "react-refresh/only-export-components": [
+      "warn",
+      { "allowConstantExport": true }
+    ]
   },
   "globals": {
     "process": "readonly"
@@ -133,11 +159,14 @@ const tsconfigTemplate = `{
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
@@ -245,17 +274,19 @@ jspm_packages/
 // readmeTemplate is the template for README.md
 const readmeTemplate = `# {{.ProjectName}}
 
-A Node.js project generated from HTML with Vite build system and Express server.
+A React TypeScript project generated from HTML with Vite build system and Express server.
 
 ## Features
 
+- **React 18** - Modern React with hooks and concurrent features
+- **TypeScript** - Type safety and enhanced developer experience
 - **Vite** - Fast build tool and development server
 - **Express** - Production-ready web server
 - **Hot Module Reloading** - Instant updates during development
-- **ESLint** - Code quality and consistency
+- **ESLint** - Code quality and consistency with React rules
 - **Prettier** - Code formatting
-- **TypeScript** - Type safety and editor support
-- **Organized Structure** - Clean separation of concerns
+- **Component-based** - Modular JSX/TSX components
+- **Modern Tooling** - Full TypeScript and React development setup
 
 ## Quick Start
 
@@ -300,13 +331,15 @@ A Node.js project generated from HTML with Vite build system and Express server.
 ├── .gitignore            # Git ignore rules
 ├── README.md             # This file
 └── src/
-    ├── index.html        # Main HTML file
-    ├── styles/
-    │   ├── main.css      # Your inline styles
-    │   └── external/     # Downloaded external CSS
-    └── scripts/
-        ├── main.js       # Your inline scripts
-        └── external/     # Downloaded external JS
+    ├── index.html        # Vite entry HTML
+    ├── main.tsx          # React entry point
+    ├── App.tsx           # Main App component
+    ├── components/
+    │   ├── MainComponent.tsx  # Converted HTML component
+    │   └── Component*.tsx     # Additional components
+    └── styles/
+        ├── main.css      # Your inline styles
+        └── external/     # Downloaded external CSS
 ` + "```" + `
 
 ## Development
@@ -334,9 +367,10 @@ The project uses Vite for development, which provides:
 
 ## Customization
 
+- **Components**: Edit files in ` + "`" + `src/components/` + "`" + `
 - **Styling**: Edit files in ` + "`" + `src/styles/` + "`" + `
-- **JavaScript**: Edit files in ` + "`" + `src/scripts/` + "`" + `
-- **HTML**: Edit ` + "`" + `src/index.html` + "`" + `
+- **Main App**: Edit ` + "`" + `src/App.tsx` + "`" + `
+- **Entry Point**: Edit ` + "`" + `src/main.tsx` + "`" + `
 - **Build config**: Modify ` + "`" + `vite.config.js` + "`" + `
 - **Server config**: Modify ` + "`" + `server.js` + "`" + `
 
@@ -361,4 +395,48 @@ This project includes the following external resources that were automatically d
 ## License
 
 MIT
+`
+
+// mainTsxTemplate is the template for src/main.tsx
+const mainTsxTemplate = `import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+import './styles/main.css'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+`
+
+// indexHtmlTemplate is the template for src/index.html
+const indexHtmlTemplate = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{.ProjectName}}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>
+`
+
+// appTsxTemplate is the template for src/App.tsx
+const appTsxTemplate = `import React from 'react'
+import MainComponent from './components/MainComponent'
+
+function App() {
+  return (
+    <div className="App">
+      <MainComponent />
+    </div>
+  )
+}
+
+export default App
 `

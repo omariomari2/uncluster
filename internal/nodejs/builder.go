@@ -2,6 +2,7 @@ package nodejs
 
 import (
 	"fmt"
+	"htmlfmt/internal/converter"
 	"htmlfmt/internal/fetcher"
 	"log"
 	"strings"
@@ -91,19 +92,38 @@ func generateREADME(config *ProjectConfig) (string, error) {
 	return buf.String(), nil
 }
 
-// organizeSourceFiles organizes the HTML, CSS, and JS files into the proper structure
+// organizeSourceFiles organizes the HTML, CSS, and JS files into the proper React/TypeScript structure
 func organizeSourceFiles(config *ProjectConfig, files map[string]string) {
-	// Add the main HTML file
-	files["src/index.html"] = config.HTML
+	// Add the main HTML file (for Vite)
+	files["src/index.html"] = indexHtmlTemplate
+
+	// Convert HTML to JSX and create main component
+	mainComponent, err := converter.ConvertToJSX(config.HTML, config.CSS, config.JS, config.ExternalCSS, config.ExternalJS)
+	if err != nil {
+		log.Printf("⚠️ Failed to convert HTML to JSX: %v", err)
+		// Fallback to basic JSX
+		mainComponent = fmt.Sprintf(`import React from 'react'
+
+function MainComponent() {
+  return (
+    <div dangerouslySetInnerHTML={{__html: %q}} />
+  )
+}
+
+export default MainComponent
+`, config.HTML)
+	}
+	files["src/components/MainComponent.tsx"] = mainComponent
+
+	// Add App.tsx
+	files["src/App.tsx"] = appTsxTemplate
+
+	// Add main.tsx
+	files["src/main.tsx"] = mainTsxTemplate
 
 	// Add inline CSS if present
 	if config.CSS != "" {
 		files["src/styles/main.css"] = config.CSS
-	}
-
-	// Add inline JS if present
-	if config.JS != "" {
-		files["src/scripts/main.js"] = config.JS
 	}
 
 	// Add external CSS files
@@ -113,10 +133,19 @@ func organizeSourceFiles(config *ProjectConfig, files map[string]string) {
 		}
 	}
 
-	// Add external JS files
+	// Add external JS files (as modules)
 	for _, js := range config.ExternalJS {
 		if js.Error == nil && js.Content != "" {
 			files["src/scripts/external/"+js.Filename] = js.Content
+		}
+	}
+
+	// Try to create additional components from HTML analysis
+	components, err := converter.AnalyzeAndConvert(config.HTML)
+	if err == nil {
+		for i, component := range components {
+			filename := fmt.Sprintf("src/components/Component%d.tsx", i+1)
+			files[filename] = component
 		}
 	}
 }

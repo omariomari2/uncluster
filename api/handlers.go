@@ -115,7 +115,7 @@ func handleConvert(c *fiber.Ctx) error {
 	}
 
 	// Convert to JSX
-	jsx, err := converter.ConvertToJSX(req.HTML)
+	jsx, err := converter.ConvertToJSX(req.HTML, "", "", nil, nil)
 	if err != nil {
 		return c.Status(500).JSON(Response{
 			Success: false,
