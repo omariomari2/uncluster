@@ -3,7 +3,9 @@ package analyzer
 import (
 	"encoding/json"
 	"fmt"
+	"htmlfmt/internal/ai"
 	"golang.org/x/net/html"
+	"log"
 	"strings"
 )
 
@@ -18,7 +20,21 @@ type ComponentSuggestion struct {
 	JSXCode     string            `json:"jsxCode"`
 }
 
+// AIClient is an interface for AI analysis (allows dependency injection for testing)
+type AIClient interface {
+	AnalyzeHTMLForComponents(htmlContent string, elementInfo string) (*ai.ComponentAnalysisResult, error)
+	IsEnabled() bool
+}
+
+var globalAIClient AIClient
+
+// SetAIClient sets the global AI client for component analysis
+func SetAIClient(client AIClient) {
+	globalAIClient = client
+}
+
 // AnalyzeComponents analyzes HTML and returns component suggestions
+// If AI is enabled, it will intelligently filter and enhance suggestions
 func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
 	// Parse the HTML
 	doc, err := html.Parse(strings.NewReader(htmlInput))
@@ -30,8 +46,20 @@ func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
 	elementPatterns := make(map[string]*ElementPattern)
 	collectPatterns(doc, elementPatterns)
 
-	// Generate suggestions based on patterns
+	// Generate initial suggestions based on patterns
 	suggestions := generateSuggestions(elementPatterns)
+
+	// If AI is enabled, enhance and filter suggestions
+	if globalAIClient != nil && globalAIClient.IsEnabled() {
+		log.Printf("🤖 Using AI to enhance component analysis...")
+		enhancedSuggestions, err := enhanceWithAI(htmlInput, suggestions, elementPatterns)
+		if err != nil {
+			log.Printf("⚠️ AI analysis failed, using pattern-based suggestions: %v", err)
+			// Fall back to original suggestions if AI fails
+			return suggestions, nil
+		}
+		return enhancedSuggestions, nil
+	}
 
 	return suggestions, nil
 }
@@ -243,6 +271,220 @@ func generateJSXCode(pattern *ElementPattern) string {
 	buf.WriteString("};\n\n")
 	buf.WriteString("export default " + generateComponentName(pattern.TagName, generatePatternKey(example)) + ";")
 	
+	return buf.String()
+}
+
+// enhanceWithAI uses AI to filter and enhance component suggestions
+func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns map[string]*ElementPattern) ([]ComponentSuggestion, error) {
+	if globalAIClient == nil || !globalAIClient.IsEnabled() {
+		return suggestions, nil
+	}
+
+	var enhancedSuggestions []ComponentSuggestion
+	analyzedCount := 0
+	skippedCount := 0
+
+	// Analyze each suggestion with AI
+	for _, suggestion := range suggestions {
+		// Find the pattern for this suggestion
+		var pattern *ElementPattern
+		for _, p := range patterns {
+			if p.TagName == suggestion.TagName && p.Count == suggestion.Count {
+				pattern = p
+				break
+			}
+		}
+
+		if pattern == nil || len(pattern.Examples) == 0 {
+			// Keep suggestion if we can't analyze it
+			enhancedSuggestions = append(enhancedSuggestions, suggestion)
+			continue
+		}
+
+		// Get example HTML for this pattern
+		exampleHTML := nodeToHTML(pattern.Examples[0])
+		elementInfo := buildElementInfo(pattern, suggestion)
+
+		// Ask AI if this should be a component
+		aiResult, err := globalAIClient.AnalyzeHTMLForComponents(exampleHTML, elementInfo)
+		if err != nil {
+			log.Printf("⚠️ AI analysis failed for %s: %v", suggestion.Name, err)
+			// Keep the suggestion if AI fails
+			enhancedSuggestions = append(enhancedSuggestions, suggestion)
+			continue
+		}
+
+		analyzedCount++
+
+		// Filter out components that AI says shouldn't be components
+		if !aiResult.ShouldBeComponent {
+			log.Printf("🚫 AI determined '%s' should NOT be a component: %s", suggestion.Name, aiResult.Reason)
+			skippedCount++
+			continue
+		}
+
+		// Enhance the suggestion with AI insights
+		if aiResult.ComponentName != "" {
+			suggestion.Name = aiResult.ComponentName
+		}
+
+		if aiResult.Reason != "" {
+			suggestion.Description = fmt.Sprintf("%s (AI: %s)", suggestion.Description, aiResult.Reason)
+		}
+
+		// Use AI-suggested props if available
+		if len(aiResult.Props) > 0 {
+			suggestion.Attributes = make(map[string]string)
+			for _, prop := range aiResult.Props {
+				suggestion.Attributes[prop] = "{string}"
+			}
+		}
+
+		// Regenerate JSX code with updated information
+		if pattern != nil {
+			suggestion.JSXCode = generateJSXCodeWithName(pattern, suggestion.Name)
+		}
+
+		enhancedSuggestions = append(enhancedSuggestions, suggestion)
+		log.Printf("✅ AI approved component '%s' (confidence: %s)", suggestion.Name, aiResult.Confidence)
+	}
+
+	log.Printf("📊 AI Analysis Summary: %d analyzed, %d skipped, %d approved", analyzedCount, skippedCount, len(enhancedSuggestions))
+
+	return enhancedSuggestions, nil
+}
+
+// buildElementInfo creates a summary string about the element for AI analysis
+func buildElementInfo(pattern *ElementPattern, suggestion ComponentSuggestion) string {
+	var info strings.Builder
+	info.WriteString(fmt.Sprintf("Tag: %s\n", pattern.TagName))
+	info.WriteString(fmt.Sprintf("Count: %d\n", pattern.Count))
+	
+	if len(pattern.Attributes) > 0 {
+		info.WriteString("Attributes: ")
+		attrs := make([]string, 0, len(pattern.Attributes))
+		for attr := range pattern.Attributes {
+			attrs = append(attrs, attr)
+		}
+		info.WriteString(strings.Join(attrs, ", "))
+		info.WriteString("\n")
+	}
+
+	if len(pattern.Children) > 0 {
+		info.WriteString("Child elements: ")
+		children := make([]string, 0, len(pattern.Children))
+		for child := range pattern.Children {
+			children = append(children, child)
+		}
+		info.WriteString(strings.Join(children, ", "))
+		info.WriteString("\n")
+	}
+
+	return info.String()
+}
+
+// nodeToHTML converts a node to HTML string (simplified version)
+func nodeToHTML(n *html.Node) string {
+	var buf strings.Builder
+	renderNode(&buf, n)
+	return buf.String()
+}
+
+// renderNode renders a node to HTML string
+func renderNode(buf *strings.Builder, n *html.Node) {
+	if n == nil {
+		return
+	}
+
+	switch n.Type {
+	case html.ElementNode:
+		buf.WriteString("<")
+		buf.WriteString(n.Data)
+		
+		for _, attr := range n.Attr {
+			buf.WriteString(" ")
+			buf.WriteString(attr.Key)
+			if attr.Val != "" {
+				buf.WriteString(`="`)
+				buf.WriteString(attr.Val)
+				buf.WriteString(`"`)
+			}
+		}
+		
+		if isVoidElement(n.Data) {
+			buf.WriteString(" />")
+			return
+		}
+		
+		buf.WriteString(">")
+		
+		// Render children
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			renderNode(buf, c)
+		}
+		
+		buf.WriteString("</")
+		buf.WriteString(n.Data)
+		buf.WriteString(">")
+		
+	case html.TextNode:
+		buf.WriteString(n.Data)
+	}
+}
+
+// isVoidElement checks if an element is void (self-closing)
+func isVoidElement(tagName string) bool {
+	voidElements := map[string]bool{
+		"area": true, "base": true, "br": true, "col": true, "embed": true,
+		"hr": true, "img": true, "input": true, "link": true, "meta": true,
+		"param": true, "source": true, "track": true, "wbr": true,
+	}
+	return voidElements[strings.ToLower(tagName)]
+}
+
+// generateJSXCodeWithName generates JSX code with a specific component name
+func generateJSXCodeWithName(pattern *ElementPattern, componentName string) string {
+	if len(pattern.Examples) == 0 {
+		return ""
+	}
+
+	var buf strings.Builder
+
+	// Component definition
+	buf.WriteString(fmt.Sprintf("const %s = ({ ", componentName))
+
+	// Add props based on common attributes
+	props := []string{}
+	for attr, count := range pattern.Attributes {
+		if count >= pattern.Count/2 {
+			props = append(props, attr+"=\"{string}\"")
+		}
+	}
+
+	if len(props) > 0 {
+		buf.WriteString(strings.Join(props, ", "))
+	}
+
+	buf.WriteString(" }) => {\n")
+	buf.WriteString("\treturn (\n")
+
+	// Generate JSX element
+	buf.WriteString(fmt.Sprintf("\t\t<%s", pattern.TagName))
+
+	// Add props
+	for attr, count := range pattern.Attributes {
+		if count >= pattern.Count/2 {
+			buf.WriteString(fmt.Sprintf(" %s={%s}", attr, attr))
+		}
+	}
+
+	buf.WriteString(">\n")
+	buf.WriteString("\t\t\t{/* Add your content here */}\n")
+	buf.WriteString(fmt.Sprintf("\t\t</%s>\n", pattern.TagName))
+	buf.WriteString("\t);\n")
+	buf.WriteString("};\n\n")
+	buf.WriteString("export default " + componentName + ";")
+
 	return buf.String()
 }
 

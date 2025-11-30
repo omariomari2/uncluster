@@ -6,6 +6,7 @@ A powerful tool built with Go that formats clustered HTML with proper indentatio
 
 - **HTML Formatting**: Transform clustered HTML into properly formatted code with tab indentation
 - **JSX Conversion**: Convert HTML to JSX with proper attribute transformations
+- **AI-Powered Component Analysis**: Intelligently identify meaningful React components using Cloudflare Workers AI (Llama 3) - prevents every div from becoming a component
 - **Component Analysis**: Automatically suggest reusable React components from HTML patterns
 - **Zip Export**: Extract inline styles/scripts and download external resources into organized zip files
 - **React TypeScript Export**: Transform HTML into production-ready React TypeScript applications with Vite, Express, and modern tooling
@@ -19,6 +20,7 @@ A powerful tool built with Go that formats clustered HTML with proper indentatio
 ### Prerequisites
 
 - Go 1.21 or later ([Download Go](https://golang.org/dl/))
+- (Optional) Cloudflare account for AI-powered component analysis
 
 ### Build from Source
 
@@ -46,6 +48,76 @@ GOOS=darwin GOARCH=amd64 go build -o htmlfmt-macos cmd/htmlfmt/main.go
 # Linux
 GOOS=linux GOARCH=amd64 go build -o htmlfmt-linux cmd/htmlfmt/main.go
 ```
+
+## Cloudflare Workers AI Setup (Optional)
+
+The tool includes AI-powered component analysis using Cloudflare Workers AI with Llama 3. This feature intelligently identifies which HTML elements should become React components, preventing generic divs from being converted unnecessarily.
+
+### Benefits of AI-Powered Analysis
+
+- **Smart Component Detection**: AI analyzes HTML structure and semantic meaning
+- **Filters Generic Elements**: Prevents every div from becoming a component
+- **Identifies Patterns**: Recognizes cards, buttons, forms, navigation items, and other meaningful patterns
+- **Provides Reasoning**: Explains why elements should or shouldn't be components
+- **Graceful Fallback**: If AI is unavailable, falls back to pattern-based analysis
+
+### Setup Instructions
+
+1. **Create a Cloudflare Account**
+   - Sign up at [cloudflare.com](https://dash.cloudflare.com/sign-up) if you don't have an account
+
+2. **Get Your Account ID**
+   - Go to your Cloudflare dashboard
+   - Your Account ID is shown in the **Overview** section (right sidebar)
+
+3. **Generate an API Token**
+   - Navigate to **My Profile** > **API Tokens**
+   - Click **Create Token**
+   - Use the **Edit Cloudflare Workers** template or create a custom token with:
+     - **Account** > **Workers AI** > **Read**
+   - Copy the generated token (you won't be able to see it again)
+
+4. **Agree to Meta's License (Required for Llama 3)**
+   - Before using Llama 3, you must agree to Meta's License
+   - Run this command (replace with your credentials):
+   ```bash
+   curl https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/meta/llama-3-8b-instruct \
+     -X POST \
+     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+     -d '{ "prompt": "agree" }'
+   ```
+
+5. **Set Environment Variables**
+   ```bash
+   export CLOUDFLARE_ACCOUNT_ID="your_account_id_here"
+   export CLOUDFLARE_API_TOKEN="your_api_token_here"
+   export CLOUDFLARE_AI_MODEL="@cf/meta/llama-3-8b-instruct"  # Optional, this is the default
+   ```
+
+   Or create a `.env` file (if using a tool like `godotenv`):
+   ```
+   CLOUDFLARE_ACCOUNT_ID=your_account_id_here
+   CLOUDFLARE_API_TOKEN=your_api_token_here
+   CLOUDFLARE_AI_MODEL=@cf/meta/llama-3-8b-instruct
+   ```
+
+6. **Start the Server**
+   - The server will automatically detect Cloudflare credentials and enable AI analysis
+   - You'll see a log message: `✅ Cloudflare AI initialized (Model: @cf/meta/llama-3-8b-instruct)`
+
+### Without Cloudflare AI
+
+If you don't configure Cloudflare credentials, the tool will still work perfectly using pattern-based component detection. You'll see:
+```
+ℹ️  Cloudflare AI not configured (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN required)
+ℹ️  Component analysis will use pattern-based detection only
+```
+
+### Available Models
+
+- `@cf/meta/llama-3-8b-instruct` (default) - Recommended for component analysis
+- `@cf/meta/llama-3.1-8b-instruct` - Alternative Llama 3.1 model
+- `@cf/meta/llama-3.2-11b-vision-instruct` - Vision-capable model (requires license agreement)
 
 ## Usage
 
@@ -388,6 +460,7 @@ All void elements are properly self-closed:
 
 The tool automatically analyzes HTML structure to suggest reusable React components:
 
+- **AI-Powered Analysis**: (When Cloudflare AI is configured) Intelligently filters components using Llama 3, preventing generic divs from becoming components
 - **Pattern Recognition**: Identifies repeated element structures
 - **Attribute Analysis**: Suggests props based on common attributes
 - **Component Generation**: Creates example component code

@@ -268,19 +268,24 @@ func AnalyzeAndConvert(html string) ([]string, error) {
 
 	// Convert each suggested component to JSX
 	for _, suggestion := range suggestions {
-		// Use the JSXCode from the analyzer if available, otherwise convert from description
-		jsx := suggestion.JSXCode
-		if jsx == "" {
-			// Fallback: create basic JSX from the component info
-			jsx = fmt.Sprintf(`<div className="%s">
-  {/* %s */}
-</div>`, suggestion.TagName, suggestion.Description)
-		}
-
 		componentName := suggestion.Name
 		// Convert component name to PascalCase
 		componentName = strings.Title(strings.ReplaceAll(componentName, "-", " "))
 		componentName = strings.ReplaceAll(componentName, " ", "")
+
+		// Use the JSXCode from the analyzer if available
+		if suggestion.JSXCode != "" {
+			component := fmt.Sprintf(`import React from 'react'
+
+%s`, suggestion.JSXCode)
+			components = append(components, component)
+			continue
+		}
+
+		// Fallback: create basic JSX from the component info
+		jsx := fmt.Sprintf(`<div className="%s">
+  {/* %s */}
+</div>`, suggestion.TagName, suggestion.Description)
 
 		component := fmt.Sprintf(`import React from 'react'
 

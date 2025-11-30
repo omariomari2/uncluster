@@ -1,6 +1,8 @@
 package main
 
 import (
+	"htmlfmt/internal/ai"
+	"htmlfmt/internal/analyzer"
 	"log"
 	"os"
 
@@ -11,6 +13,9 @@ import (
 )
 
 func main() {
+	// Initialize Cloudflare AI client if credentials are provided
+	initCloudflareAI()
+
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
@@ -44,4 +49,37 @@ func main() {
 
 	log.Printf("Server starting on port %s", port)
 	log.Fatal(app.Listen(":" + port))
+}
+
+// initCloudflareAI initializes the Cloudflare AI client if credentials are available
+func initCloudflareAI() {
+	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	apiToken := os.Getenv("CLOUDFLARE_API_TOKEN")
+	model := os.Getenv("CLOUDFLARE_AI_MODEL")
+
+	// If no credentials provided, AI will be disabled
+	if accountID == "" || apiToken == "" {
+		log.Printf("ℹ️  Cloudflare AI not configured (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN required)")
+		log.Printf("ℹ️  Component analysis will use pattern-based detection only")
+		return
+	}
+
+	// Set default model if not specified
+	if model == "" {
+		model = "@cf/meta/llama-3-8b-instruct"
+	}
+
+	// Create and configure AI client
+	config := ai.CloudflareConfig{
+		AccountID: accountID,
+		APIToken:  apiToken,
+		Model:     model,
+		Enabled:   true,
+	}
+
+	client := ai.NewCloudflareClient(config)
+	analyzer.SetAIClient(client)
+
+	log.Printf("✅ Cloudflare AI initialized (Model: %s)", model)
+	log.Printf("🤖 AI-powered component analysis is enabled")
 }
