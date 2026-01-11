@@ -17,13 +17,13 @@ build-cli:
 # Build web server
 build-server:
 	@echo "Building web server..."
-	@go build -o htmlfmt-server api/server.go api/handlers.go
+	@go build -o htmlfmt-server main.go
 	@echo "Web server built: htmlfmt-server"
 
 # Run the web server
 run:
 	@echo "Starting web server..."
-	@go run api/server.go api/handlers.go
+	@go run main.go
 
 # Run tests
 test:
@@ -40,17 +40,17 @@ clean:
 build-windows:
 	@echo "Building for Windows..."
 	@GOOS=windows GOARCH=amd64 go build -o htmlfmt.exe cmd/htmlfmt/main.go
-	@GOOS=windows GOARCH=amd64 go build -o htmlfmt-server.exe api/server.go api/handlers.go
+	@GOOS=windows GOARCH=amd64 go build -o htmlfmt-server.exe main.go
 
 build-macos:
 	@echo "Building for macOS..."
 	@GOOS=darwin GOARCH=amd64 go build -o htmlfmt-macos cmd/htmlfmt/main.go
-	@GOOS=darwin GOARCH=amd64 go build -o htmlfmt-server-macos api/server.go api/handlers.go
+	@GOOS=darwin GOARCH=amd64 go build -o htmlfmt-server-macos main.go
 
 build-linux:
 	@echo "Building for Linux..."
 	@GOOS=linux GOARCH=amd64 go build -o htmlfmt-linux cmd/htmlfmt/main.go
-	@GOOS=linux GOARCH=amd64 go build -o htmlfmt-server-linux api/server.go api/handlers.go
+	@GOOS=linux GOARCH=amd64 go build -o htmlfmt-server-linux main.go
 
 # Install dependencies
 deps:
