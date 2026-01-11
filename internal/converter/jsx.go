@@ -82,6 +82,15 @@ func (c *JSXConverter) cleanHTML(html string) string {
 	html = regexp.MustCompile(`<body[^>]*>`).ReplaceAllString(html, "")
 	html = regexp.MustCompile(`</body>`).ReplaceAllString(html, "")
 
+	// Remove elements that shouldn't be in React component body
+	html = regexp.MustCompile(`<title[^>]*>.*?</title>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<meta[^>]*/>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<meta[^>]*>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<style[^>]*>.*?</style>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<script[^>]*>.*?</script>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<link[^>]*/>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`<link[^>]*>`).ReplaceAllString(html, "")
+
 	return strings.TrimSpace(html)
 }
 
@@ -191,12 +200,12 @@ func (c *JSXConverter) generateCSSImports(css string) string {
 	var imports []string
 
 	if css != "" {
-		imports = append(imports, `import './styles/main.css'`)
+		imports = append(imports, `import '../styles/main.css'`)
 	}
 
 	for _, cssFile := range c.ExternalCSS {
 		if cssFile.Error == nil {
-			imports = append(imports, fmt.Sprintf(`import './styles/external/%s'`, cssFile.Filename))
+			imports = append(imports, fmt.Sprintf(`import '../styles/external/%s'`, cssFile.Filename))
 		}
 	}
 

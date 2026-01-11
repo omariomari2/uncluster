@@ -48,12 +48,7 @@ export default defineConfig({
   publicDir: '../public',
   build: {
     outDir: '../dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        main: 'src/main.tsx'
-      }
-    }
+    emptyOutDir: true
   },
   server: {
     port: 3000,

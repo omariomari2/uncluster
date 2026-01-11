@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"htmlfmt/internal/ai"
-	"golang.org/x/net/html"
 	"log"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 type ComponentSuggestion struct {
@@ -70,7 +71,7 @@ type ElementPattern struct {
 func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 	if n.Type == html.ElementNode {
 		patternKey := generatePatternKey(n)
-		
+
 		if patterns[patternKey] == nil {
 			patterns[patternKey] = &ElementPattern{
 				TagName:    n.Data,
@@ -80,27 +81,27 @@ func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 				Examples:   []*html.Node{},
 			}
 		}
-		
+
 		pattern := patterns[patternKey]
 		pattern.Count++
-		
+
 		// Collect attributes
 		for _, attr := range n.Attr {
 			pattern.Attributes[attr.Key]++
 		}
-		
+
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == html.ElementNode {
 				pattern.Children[c.Data]++
 			}
 		}
-		
+
 		// Keep examples (limit to 3)
 		if len(pattern.Examples) < 3 {
 			pattern.Examples = append(pattern.Examples, n)
 		}
 	}
-	
+
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		collectPatterns(c, patterns)
 	}
@@ -108,18 +109,18 @@ func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 
 func generatePatternKey(n *html.Node) string {
 	key := n.Data
-	
+
 	classes := getAttributeValue(n, "class")
 	if classes != "" {
 		key += "." + strings.ReplaceAll(classes, " ", ".")
 	}
-	
+
 	// Add id if present
 	id := getAttributeValue(n, "id")
 	if id != "" {
 		key += "#" + id
 	}
-	
+
 	return key
 }
 
@@ -134,12 +135,24 @@ func getAttributeValue(n *html.Node, attrName string) string {
 
 func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggestion {
 	var suggestions []ComponentSuggestion
-	
+
+	// Structural HTML elements that should never become React components
+	structuralElements := map[string]bool{
+		"html": true, "head": true, "body": true, "title": true,
+		"meta": true, "link": true, "script": true, "style": true,
+		"base": true, "noscript": true,
+	}
+
 	for patternKey, pattern := range patterns {
+		// Skip structural HTML elements
+		if structuralElements[pattern.TagName] {
+			continue
+		}
+
 		if pattern.Count < 2 && len(pattern.Children) < 2 {
 			continue
 		}
-		
+
 		suggestion := ComponentSuggestion{
 			Name:        generateComponentName(pattern.TagName, patternKey),
 			Description: generateDescription(pattern),
@@ -149,23 +162,23 @@ func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggest
 			Count:       pattern.Count,
 			JSXCode:     generateJSXCode(pattern),
 		}
-		
+
 		// Add common attributes as props
 		for attr, count := range pattern.Attributes {
 			if count >= pattern.Count/2 { // Attribute appears in at least half of instances
 				suggestion.Attributes[attr] = "{string}"
 			}
 		}
-		
+
 		for childTag, count := range pattern.Children {
 			if count >= pattern.Count/2 {
 				suggestion.Children = append(suggestion.Children, childTag)
 			}
 		}
-		
+
 		suggestions = append(suggestions, suggestion)
 	}
-	
+
 	return suggestions
 }
 
@@ -173,7 +186,7 @@ func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggest
 func generateComponentName(tagName, patternKey string) string {
 	// Convert to PascalCase
 	name := strings.Title(tagName)
-	
+
 	// Add descriptive suffix based on common patterns
 	if strings.Contains(patternKey, "card") {
 		name += "Card"
@@ -188,25 +201,25 @@ func generateComponentName(tagName, patternKey string) string {
 	} else {
 		name += "Component"
 	}
-	
+
 	return name
 }
 
 func generateDescription(pattern *ElementPattern) string {
 	desc := fmt.Sprintf("A reusable %s component", pattern.TagName)
-	
+
 	if pattern.Count > 1 {
 		desc += fmt.Sprintf(" (appears %d times)", pattern.Count)
 	}
-	
+
 	if len(pattern.Attributes) > 0 {
 		desc += " with configurable attributes"
 	}
-	
+
 	if len(pattern.Children) > 0 {
 		desc += " and child elements"
 	}
-	
+
 	return desc
 }
 
@@ -215,43 +228,43 @@ func generateJSXCode(pattern *ElementPattern) string {
 	if len(pattern.Examples) == 0 {
 		return ""
 	}
-	
+
 	example := pattern.Examples[0]
 	var buf strings.Builder
-	
+
 	buf.WriteString(fmt.Sprintf("const %s = ({ ", generateComponentName(pattern.TagName, generatePatternKey(example))))
-	
+
 	props := []string{}
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
 			props = append(props, attr+"=\"{string}\"")
 		}
 	}
-	
+
 	if len(props) > 0 {
 		buf.WriteString(strings.Join(props, ", "))
 	}
-	
+
 	buf.WriteString(" }) => {\n")
 	buf.WriteString("\treturn (\n")
-	
+
 	// Generate JSX element
 	buf.WriteString(fmt.Sprintf("\t\t<%s", pattern.TagName))
-	
+
 	// Add props
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
 			buf.WriteString(fmt.Sprintf(" %s={%s}", attr, attr))
 		}
 	}
-	
+
 	buf.WriteString(">\n")
 	buf.WriteString("\t\t\t\n")
 	buf.WriteString(fmt.Sprintf("\t\t</%s>\n", pattern.TagName))
 	buf.WriteString("\t);\n")
 	buf.WriteString("};\n\n")
 	buf.WriteString("export default " + generateComponentName(pattern.TagName, generatePatternKey(example)) + ";")
-	
+
 	return buf.String()
 }
 
@@ -335,7 +348,7 @@ func buildElementInfo(pattern *ElementPattern, suggestion ComponentSuggestion) s
 	var info strings.Builder
 	info.WriteString(fmt.Sprintf("Tag: %s\n", pattern.TagName))
 	info.WriteString(fmt.Sprintf("Count: %d\n", pattern.Count))
-	
+
 	if len(pattern.Attributes) > 0 {
 		info.WriteString("Attributes: ")
 		attrs := make([]string, 0, len(pattern.Attributes))
@@ -375,7 +388,7 @@ func renderNode(buf *strings.Builder, n *html.Node) {
 	case html.ElementNode:
 		buf.WriteString("<")
 		buf.WriteString(n.Data)
-		
+
 		for _, attr := range n.Attr {
 			buf.WriteString(" ")
 			buf.WriteString(attr.Key)
@@ -385,22 +398,22 @@ func renderNode(buf *strings.Builder, n *html.Node) {
 				buf.WriteString(`"`)
 			}
 		}
-		
+
 		if isVoidElement(n.Data) {
-		buf.WriteString(" />")
-		return
-	}
-	
-	buf.WriteString(">")
-	
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
+			buf.WriteString(" />")
+			return
+		}
+
+		buf.WriteString(">")
+
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			renderNode(buf, c)
 		}
-		
+
 		buf.WriteString("</")
 		buf.WriteString(n.Data)
 		buf.WriteString(">")
-		
+
 	case html.TextNode:
 		buf.WriteString(n.Data)
 	}
@@ -464,11 +477,11 @@ func GetSuggestionsJSON(htmlInput string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	jsonData, err := json.MarshalIndent(suggestions, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal suggestions to JSON: %w", err)
 	}
-	
+
 	return string(jsonData), nil
 }
