@@ -15,7 +15,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Request structures
 type FormatRequest struct {
 	HTML string `json:"html" validate:"required"`
 }
@@ -36,34 +35,24 @@ type ComponentResponse struct {
 	Error       string                         `json:"error,omitempty"`
 }
 
-// setupRoutes configures all API routes
 func setupRoutes(app *fiber.App) {
-	// API routes
 	api := app.Group("/api")
 
-	// Format HTML endpoint
 	api.Post("/format", handleFormat)
 
-	// Convert to JSX endpoint
 	api.Post("/convert", handleConvert)
 
-	// Analyze components endpoint
 	api.Post("/analyze", handleAnalyze)
 
-	// Export to zip endpoint
 	api.Post("/export", handleExport)
 
-	// Export to Node.js project endpoint
 	api.Post("/export-nodejs", handleExportNodeJS)
 
-	// Health check
 	api.Get("/health", handleHealth)
 
-	// Serve static files
-	app.Static("/", "./web/static")
+	app.Static("/", "./dist")
 }
 
-// handleFormat formats HTML with proper indentation
 func handleFormat(c *fiber.Ctx) error {
 	var req FormatRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -73,7 +62,6 @@ func handleFormat(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validate input
 	if strings.TrimSpace(req.HTML) == "" {
 		return c.Status(400).JSON(Response{
 			Success: false,
@@ -81,7 +69,6 @@ func handleFormat(c *fiber.Ctx) error {
 		})
 	}
 
-	// Format HTML
 	formatted, err := formatter.Format(req.HTML)
 	if err != nil {
 		return c.Status(500).JSON(Response{
@@ -96,7 +83,6 @@ func handleFormat(c *fiber.Ctx) error {
 	})
 }
 
-// handleConvert converts HTML to JSX
 func handleConvert(c *fiber.Ctx) error {
 	var req ConvertRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -106,7 +92,6 @@ func handleConvert(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validate input
 	if strings.TrimSpace(req.HTML) == "" {
 		return c.Status(400).JSON(Response{
 			Success: false,
@@ -114,7 +99,6 @@ func handleConvert(c *fiber.Ctx) error {
 		})
 	}
 
-	// Convert to JSX
 	jsx, err := converter.ConvertToJSX(req.HTML, "", "", nil, nil)
 	if err != nil {
 		return c.Status(500).JSON(Response{
@@ -129,7 +113,6 @@ func handleConvert(c *fiber.Ctx) error {
 	})
 }
 
-// handleAnalyze analyzes HTML and returns component suggestions
 func handleAnalyze(c *fiber.Ctx) error {
 	var req ConvertRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -139,7 +122,6 @@ func handleAnalyze(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validate input
 	if strings.TrimSpace(req.HTML) == "" {
 		return c.Status(400).JSON(ComponentResponse{
 			Success: false,
@@ -147,7 +129,6 @@ func handleAnalyze(c *fiber.Ctx) error {
 		})
 	}
 
-	// Analyze components
 	suggestions, err := analyzer.AnalyzeComponents(req.HTML)
 	if err != nil {
 		return c.Status(500).JSON(ComponentResponse{
@@ -162,7 +143,6 @@ func handleAnalyze(c *fiber.Ctx) error {
 	})
 }
 
-// handleExport extracts CSS and JS from HTML and returns a zip file
 func handleExport(c *fiber.Ctx) error {
 	log.Printf("📦 Export request received from %s", c.IP())
 
@@ -175,7 +155,6 @@ func handleExport(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validate input
 	if strings.TrimSpace(req.HTML) == "" {
 		log.Printf("❌ Export request: empty HTML content")
 		return c.Status(400).JSON(Response{
@@ -185,7 +164,6 @@ func handleExport(c *fiber.Ctx) error {
 	}
 
 	log.Printf("📄 Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
-	// Extract CSS and JS from HTML
 	extracted, err := extractor.Extract(req.HTML)
 	if err != nil {
 		log.Printf("❌ Extraction failed: %v", err)
@@ -200,7 +178,6 @@ func handleExport(c *fiber.Ctx) error {
 	log.Printf("📦 External resources - CSS: %d files, JS: %d files",
 		len(extracted.ExternalCSS), len(extracted.ExternalJS))
 
-	// Create zip archive
 	log.Printf("🗜️ Creating zip archive...")
 	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.CSS, extracted.JS, extracted.ExternalCSS, extracted.ExternalJS)
 	if err != nil {
@@ -211,17 +188,14 @@ func handleExport(c *fiber.Ctx) error {
 		})
 	}
 
-	// Set headers for file download
 	c.Set("Content-Type", "application/zip")
 	c.Set("Content-Disposition", "attachment; filename=\"extracted.zip\"")
 	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
 
 	log.Printf("✅ Export completed successfully (zip size: %d bytes)", len(zipData))
-	// Return the zip file
 	return c.Send(zipData)
 }
 
-// handleExportNodeJS handles Node.js project export requests
 func handleExportNodeJS(c *fiber.Ctx) error {
 	log.Printf("📦 Node.js project export request received from %s", c.IP())
 
@@ -244,7 +218,6 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 
 	log.Printf("📄 Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
 
-	// Extract content
 	extracted, err := extractor.Extract(req.HTML)
 	if err != nil {
 		log.Printf("❌ Extraction failed: %v", err)
@@ -259,13 +232,10 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 	log.Printf("📦 External resources - CSS: %d files, JS: %d files",
 		len(extracted.ExternalCSS), len(extracted.ExternalJS))
 
-	// Rewrite HTML for Node.js structure
 	rewrittenHTML := extracted.RewriteForNodeJS()
 
-	// Generate project name from timestamp
 	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
 
-	// Build Node.js project
 	config := &nodejs.ProjectConfig{
 		ProjectName:    projectName,
 		PackageManager: "npm",
@@ -286,7 +256,6 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create zip
 	log.Printf("🗜️ Creating zip archive...")
 	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
 	if err != nil {
@@ -299,7 +268,6 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 
 	log.Printf("✅ Node.js project export completed (size: %d bytes)", len(zipData))
 
-	// Set headers
 	c.Set("Content-Type", "application/zip")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", projectName))
 	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
@@ -307,7 +275,6 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 	return c.Send(zipData)
 }
 
-// handleHealth returns server health status
 func handleHealth(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status":  "healthy",

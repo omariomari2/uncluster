@@ -7,15 +7,12 @@ import (
 	"strings"
 )
 
-// Format takes a clustered HTML string and returns properly formatted HTML with tab indentation
 func Format(htmlInput string) (string, error) {
-	// Parse the HTML
 	doc, err := html.Parse(strings.NewReader(htmlInput))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
-	// Format the parsed HTML
 	var buf bytes.Buffer
 	err = formatNode(&buf, doc, 0)
 	if err != nil {
@@ -25,11 +22,9 @@ func Format(htmlInput string) (string, error) {
 	return buf.String(), nil
 }
 
-// formatNode recursively formats an HTML node with proper indentation
 func formatNode(buf *bytes.Buffer, n *html.Node, depth int) error {
 	switch n.Type {
 	case html.DocumentNode:
-		// Process all children of document
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if err := formatNode(buf, c, depth); err != nil {
 				return err
@@ -42,7 +37,6 @@ func formatNode(buf *bytes.Buffer, n *html.Node, depth int) error {
 			buf.WriteString("<")
 			buf.WriteString(n.Data)
 			
-			// Add attributes
 			for _, attr := range n.Attr {
 				buf.WriteString(" ")
 				buf.WriteString(attr.Key)
@@ -59,7 +53,6 @@ func formatNode(buf *bytes.Buffer, n *html.Node, depth int) error {
 			buf.WriteString("<")
 			buf.WriteString(n.Data)
 			
-			// Add attributes
 			for _, attr := range n.Attr {
 				buf.WriteString(" ")
 				buf.WriteString(attr.Key)
@@ -71,7 +64,6 @@ func formatNode(buf *bytes.Buffer, n *html.Node, depth int) error {
 			}
 			buf.WriteString(">")
 
-			// Check if element has only text content
 			hasOnlyText := hasOnlyTextChildren(n)
 			
 			if !hasOnlyText && hasChildren(n) {
@@ -85,7 +77,6 @@ func formatNode(buf *bytes.Buffer, n *html.Node, depth int) error {
 				}
 			}
 
-			// Closing tag
 			if !hasOnlyText && hasChildren(n) {
 				buf.WriteString(strings.Repeat("\t", depth))
 			}
@@ -123,7 +114,6 @@ func formatNode(buf *bytes.Buffer, n *html.Node, depth int) error {
 	return nil
 }
 
-// isVoidElement checks if an element is void (self-closing)
 func isVoidElement(tagName string) bool {
 	voidElements := map[string]bool{
 		"area": true, "base": true, "br": true, "col": true, "embed": true,
@@ -138,7 +128,6 @@ func hasChildren(n *html.Node) bool {
 	return n.FirstChild != nil
 }
 
-// hasOnlyTextChildren checks if a node has only text children (no element children)
 func hasOnlyTextChildren(n *html.Node) bool {
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		if c.Type == html.ElementNode {

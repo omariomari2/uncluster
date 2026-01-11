@@ -13,10 +13,8 @@ import (
 )
 
 func main() {
-	// Initialize Cloudflare AI client if credentials are provided
 	initCloudflareAI()
 
-	// Create Fiber app
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
@@ -29,7 +27,6 @@ func main() {
 		},
 	})
 
-	// Middleware
 	app.Use(logger.New())
 	app.Use(recover.New())
 	app.Use(cors.New(cors.Config{
@@ -38,10 +35,8 @@ func main() {
 		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
 	}))
 
-	// Routes
 	setupRoutes(app)
 
-	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
@@ -51,25 +46,21 @@ func main() {
 	log.Fatal(app.Listen(":" + port))
 }
 
-// initCloudflareAI initializes the Cloudflare AI client if credentials are available
 func initCloudflareAI() {
 	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
 	apiToken := os.Getenv("CLOUDFLARE_API_TOKEN")
 	model := os.Getenv("CLOUDFLARE_AI_MODEL")
 
-	// If no credentials provided, AI will be disabled
 	if accountID == "" || apiToken == "" {
 		log.Printf("ℹ️  Cloudflare AI not configured (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN required)")
 		log.Printf("ℹ️  Component analysis will use pattern-based detection only")
 		return
 	}
 
-	// Set default model if not specified
 	if model == "" {
 		model = "@cf/meta/llama-3-8b-instruct"
 	}
 
-	// Create and configure AI client
 	config := ai.CloudflareConfig{
 		AccountID: accountID,
 		APIToken:  apiToken,

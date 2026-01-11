@@ -1,6 +1,5 @@
 package nodejs
 
-// packageJSONTemplate is the template for package.json
 const packageJSONTemplate = `{
   "name": "{{.ProjectName}}",
   "version": "1.0.0",
@@ -40,7 +39,6 @@ const packageJSONTemplate = `{
   "license": "MIT"
 }`
 
-// viteConfigTemplate is the template for vite.config.js
 const viteConfigTemplate = `import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -69,7 +67,6 @@ export default defineConfig({
   }
 })`
 
-// serverJSTemplate is the template for server.js
 const serverJSTemplate = `import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -93,7 +90,6 @@ app.listen(PORT, () => {
   console.log('Serving files from: ' + path.join(__dirname, 'dist'))
 })`
 
-// eslintConfigTemplate is the template for .eslintrc.json
 const eslintConfigTemplate = `{
   "env": {
     "browser": true,
@@ -135,7 +131,6 @@ const eslintConfigTemplate = `{
   }
 }`
 
-// prettierConfigTemplate is the template for .prettierrc
 const prettierConfigTemplate = `{
   "semi": true,
   "trailingComma": "es5",
@@ -147,7 +142,6 @@ const prettierConfigTemplate = `{
   "arrowParens": "avoid"
 }`
 
-// tsconfigTemplate is the template for tsconfig.json
 const tsconfigTemplate = `{
   "compilerOptions": {
     "target": "ES2020",
@@ -172,7 +166,6 @@ const tsconfigTemplate = `{
   "exclude": ["node_modules", "dist"]
 }`
 
-// gitignoreTemplate is the template for .gitignore
 const gitignoreTemplate = `# Dependencies
 node_modules/
 npm-debug.log*
@@ -271,7 +264,6 @@ jspm_packages/
 .tern-port
 `
 
-// readmeTemplate is the template for README.md
 const readmeTemplate = `# {{.ProjectName}}
 
 A React TypeScript project generated from HTML with Vite build system and Express server.
@@ -397,7 +389,6 @@ This project includes the following external resources that were automatically d
 MIT
 `
 
-// mainTsxTemplate is the template for src/main.tsx
 const mainTsxTemplate = `import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
@@ -410,7 +401,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 )
 `
 
-// indexHtmlTemplate is the template for src/index.html
 const indexHtmlTemplate = `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -425,7 +415,6 @@ const indexHtmlTemplate = `<!DOCTYPE html>
 </html>
 `
 
-// appTsxTemplate is the template for src/App.tsx
 const appTsxTemplate = `import React from 'react'
 import MainComponent from './components/MainComponent'
 

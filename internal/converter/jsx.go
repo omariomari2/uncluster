@@ -8,13 +8,11 @@ import (
 	"strings"
 )
 
-// JSXConverter handles conversion from HTML to JSX/TSX
 type JSXConverter struct {
 	ExternalCSS []fetcher.FetchedResource
 	ExternalJS  []fetcher.FetchedResource
 }
 
-// ConvertToJSX converts HTML content to JSX/TSX components
 func ConvertToJSX(html, css, js string, externalCSS []fetcher.FetchedResource, externalJS []fetcher.FetchedResource) (string, error) {
 	converter := &JSXConverter{
 		ExternalCSS: externalCSS,
@@ -53,27 +51,19 @@ export default MainComponent
 	return component, nil
 }
 
-// convertHTMLToJSX converts HTML string to JSX
 func (c *JSXConverter) convertHTMLToJSX(html string) (string, error) {
-	// Remove DOCTYPE and html/head/body tags, keep only the content
 	html = c.cleanHTML(html)
 
-	// Convert HTML attributes to JSX
 	jsx := c.convertAttributes(html)
 
-	// Convert self-closing tags
 	jsx = c.convertSelfClosingTags(jsx)
 
-	// Convert class to className
 	jsx = c.convertClassToClassName(jsx)
 
-	// Convert style attributes
 	jsx = c.convertStyleAttributes(jsx)
 
-	// Convert event handlers
 	jsx = c.convertEventHandlers(jsx)
 
-	// Convert external resource links
 	jsx = c.convertExternalResources(jsx)
 
 	return jsx, nil
@@ -95,18 +85,13 @@ func (c *JSXConverter) cleanHTML(html string) string {
 	return strings.TrimSpace(html)
 }
 
-// convertAttributes converts HTML attributes to JSX format
 func (c *JSXConverter) convertAttributes(html string) string {
-	// Convert for to htmlFor
 	html = regexp.MustCompile(`for="([^"]*)"`).ReplaceAllString(html, `htmlFor="$1"`)
 
-	// Convert tabindex to tabIndex
 	html = regexp.MustCompile(`tabindex="([^"]*)"`).ReplaceAllString(html, `tabIndex="$1"`)
 
-	// Convert readonly to readOnly
 	html = regexp.MustCompile(`readonly`).ReplaceAllString(html, `readOnly`)
 
-	// Convert checked, disabled, etc. to boolean attributes
 	html = regexp.MustCompile(`checked="([^"]*)"`).ReplaceAllString(html, `checked={$1 === "checked"}`)
 	html = regexp.MustCompile(`disabled="([^"]*)"`).ReplaceAllString(html, `disabled={$1 === "disabled"}`)
 	html = regexp.MustCompile(`selected="([^"]*)"`).ReplaceAllString(html, `selected={$1 === "selected"}`)
@@ -114,12 +99,10 @@ func (c *JSXConverter) convertAttributes(html string) string {
 	return html
 }
 
-// convertSelfClosingTags converts self-closing HTML tags to JSX format
 func (c *JSXConverter) convertSelfClosingTags(html string) string {
 	selfClosingTags := []string{"br", "hr", "img", "input", "meta", "link", "area", "base", "col", "embed", "source", "track", "wbr"}
 
 	for _, tag := range selfClosingTags {
-		// Convert <tag> to <tag />
 		pattern := fmt.Sprintf(`<%s([^>]*)>`, tag)
 		replacement := fmt.Sprintf(`<%s$1 />`, tag)
 		html = regexp.MustCompile(pattern).ReplaceAllString(html, replacement)
@@ -133,9 +116,7 @@ func (c *JSXConverter) convertClassToClassName(html string) string {
 	return regexp.MustCompile(`class="([^"]*)"`).ReplaceAllString(html, `className="$1"`)
 }
 
-// convertStyleAttributes converts style attributes to JSX format
 func (c *JSXConverter) convertStyleAttributes(html string) string {
-	// Convert style="color: red; font-size: 14px" to style={{color: 'red', fontSize: '14px'}}
 	stylePattern := `style="([^"]*)"`
 	html = regexp.MustCompile(stylePattern).ReplaceAllStringFunc(html, func(match string) string {
 		styleContent := regexp.MustCompile(`style="([^"]*)"`).FindStringSubmatch(match)[1]
@@ -165,7 +146,6 @@ func (c *JSXConverter) convertStyleString(style string) string {
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
 
-		// Convert kebab-case to camelCase
 		key = c.kebabToCamel(key)
 
 		jsxStyles = append(jsxStyles, fmt.Sprintf("%s: '%s'", key, value))
@@ -191,9 +171,7 @@ func (c *JSXConverter) kebabToCamel(s string) string {
 	return result
 }
 
-// convertEventHandlers converts HTML event handlers to JSX format
 func (c *JSXConverter) convertEventHandlers(html string) string {
-	// Convert onclick to onClick
 	html = regexp.MustCompile(`onclick="([^"]*)"`).ReplaceAllString(html, `onClick={() => { $1 }}`)
 	html = regexp.MustCompile(`onchange="([^"]*)"`).ReplaceAllString(html, `onChange={() => { $1 }}`)
 	html = regexp.MustCompile(`onsubmit="([^"]*)"`).ReplaceAllString(html, `onSubmit={() => { $1 }}`)
@@ -202,28 +180,20 @@ func (c *JSXConverter) convertEventHandlers(html string) string {
 	return html
 }
 
-// convertExternalResources converts external resource links to imports
 func (c *JSXConverter) convertExternalResources(html string) string {
-	// Convert external CSS links to imports (handled in generateCSSImports)
-	// Convert external JS scripts to imports (handled in generateJSCode)
-
-	// Remove external link and script tags as they'll be handled by imports
 	html = regexp.MustCompile(`<link[^>]*rel="stylesheet"[^>]*>`).ReplaceAllString(html, "")
 	html = regexp.MustCompile(`<script[^>]*src="[^"]*"[^>]*></script>`).ReplaceAllString(html, "")
 
 	return html
 }
 
-// generateCSSImports generates CSS import statements
 func (c *JSXConverter) generateCSSImports(css string) string {
 	var imports []string
 
-	// Add main CSS file if there's inline CSS
 	if css != "" {
 		imports = append(imports, `import './styles/main.css'`)
 	}
 
-	// Add external CSS imports
 	for _, cssFile := range c.ExternalCSS {
 		if cssFile.Error == nil {
 			imports = append(imports, fmt.Sprintf(`import './styles/external/%s'`, cssFile.Filename))
@@ -233,21 +203,18 @@ func (c *JSXConverter) generateCSSImports(css string) string {
 	return strings.Join(imports, "\n")
 }
 
-// generateJSCode generates JavaScript code for the component
 func (c *JSXConverter) generateJSCode(js string) string {
 	var jsCode strings.Builder
 
-	// Add inline JavaScript
 	if js != "" {
-		jsCode.WriteString("\n// Inline JavaScript\n")
+		jsCode.WriteString("\n")
 		jsCode.WriteString(js)
 		jsCode.WriteString("\n")
 	}
 
-	// Add external JavaScript imports and code
 	for _, jsFile := range c.ExternalJS {
 		if jsFile.Error == nil {
-			jsCode.WriteString(fmt.Sprintf("\n// External JavaScript: %s\n", jsFile.Filename))
+			jsCode.WriteString(fmt.Sprintf("\n", jsFile.Filename))
 			jsCode.WriteString(jsFile.Content)
 			jsCode.WriteString("\n")
 		}
@@ -266,14 +233,11 @@ func AnalyzeAndConvert(html string) ([]string, error) {
 
 	var components []string
 
-	// Convert each suggested component to JSX
 	for _, suggestion := range suggestions {
 		componentName := suggestion.Name
-		// Convert component name to PascalCase
 		componentName = strings.Title(strings.ReplaceAll(componentName, "-", " "))
 		componentName = strings.ReplaceAll(componentName, " ", "")
 
-		// Use the JSXCode from the analyzer if available
 		if suggestion.JSXCode != "" {
 			component := fmt.Sprintf(`import React from 'react'
 
@@ -290,7 +254,6 @@ func AnalyzeAndConvert(html string) ([]string, error) {
 		component := fmt.Sprintf(`import React from 'react'
 
 interface %sProps {
-  // Add props here
 }
 
 function %s(props: %sProps) {

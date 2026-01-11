@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-// ComponentSuggestion represents a suggested component extraction
 type ComponentSuggestion struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
@@ -28,15 +27,11 @@ type AIClient interface {
 
 var globalAIClient AIClient
 
-// SetAIClient sets the global AI client for component analysis
 func SetAIClient(client AIClient) {
 	globalAIClient = client
 }
 
-// AnalyzeComponents analyzes HTML and returns component suggestions
-// If AI is enabled, it will intelligently filter and enhance suggestions
 func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
-	// Parse the HTML
 	doc, err := html.Parse(strings.NewReader(htmlInput))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
@@ -55,7 +50,6 @@ func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
 		enhancedSuggestions, err := enhanceWithAI(htmlInput, suggestions, elementPatterns)
 		if err != nil {
 			log.Printf("⚠️ AI analysis failed, using pattern-based suggestions: %v", err)
-			// Fall back to original suggestions if AI fails
 			return suggestions, nil
 		}
 		return enhancedSuggestions, nil
@@ -73,7 +67,6 @@ type ElementPattern struct {
 	Examples   []*html.Node
 }
 
-// collectPatterns recursively collects element patterns from the DOM
 func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 	if n.Type == html.ElementNode {
 		patternKey := generatePatternKey(n)
@@ -96,7 +89,6 @@ func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 			pattern.Attributes[attr.Key]++
 		}
 		
-		// Collect child elements
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == html.ElementNode {
 				pattern.Children[c.Data]++
@@ -109,18 +101,14 @@ func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 		}
 	}
 	
-	// Recursively process children
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		collectPatterns(c, patterns)
 	}
 }
 
-// generatePatternKey creates a unique key for an element pattern
 func generatePatternKey(n *html.Node) string {
-	// Use tag name as base
 	key := n.Data
 	
-	// Add class information if present
 	classes := getAttributeValue(n, "class")
 	if classes != "" {
 		key += "." + strings.ReplaceAll(classes, " ", ".")
@@ -135,7 +123,6 @@ func generatePatternKey(n *html.Node) string {
 	return key
 }
 
-// getAttributeValue gets the value of an attribute from a node
 func getAttributeValue(n *html.Node, attrName string) string {
 	for _, attr := range n.Attr {
 		if attr.Key == attrName {
@@ -145,12 +132,10 @@ func getAttributeValue(n *html.Node, attrName string) string {
 	return ""
 }
 
-// generateSuggestions creates component suggestions from patterns
 func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggestion {
 	var suggestions []ComponentSuggestion
 	
 	for patternKey, pattern := range patterns {
-		// Only suggest components for elements that appear multiple times or have significant structure
 		if pattern.Count < 2 && len(pattern.Children) < 2 {
 			continue
 		}
@@ -168,11 +153,10 @@ func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggest
 		// Add common attributes as props
 		for attr, count := range pattern.Attributes {
 			if count >= pattern.Count/2 { // Attribute appears in at least half of instances
-				suggestion.Attributes[attr] = "{string}" // Default to string type
+				suggestion.Attributes[attr] = "{string}"
 			}
 		}
 		
-		// Add child element types
 		for childTag, count := range pattern.Children {
 			if count >= pattern.Count/2 {
 				suggestion.Children = append(suggestion.Children, childTag)
@@ -208,7 +192,6 @@ func generateComponentName(tagName, patternKey string) string {
 	return name
 }
 
-// generateDescription creates a description for the component
 func generateDescription(pattern *ElementPattern) string {
 	desc := fmt.Sprintf("A reusable %s component", pattern.TagName)
 	
@@ -236,10 +219,8 @@ func generateJSXCode(pattern *ElementPattern) string {
 	example := pattern.Examples[0]
 	var buf strings.Builder
 	
-	// Component definition
 	buf.WriteString(fmt.Sprintf("const %s = ({ ", generateComponentName(pattern.TagName, generatePatternKey(example))))
 	
-	// Add props based on common attributes
 	props := []string{}
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
@@ -265,7 +246,7 @@ func generateJSXCode(pattern *ElementPattern) string {
 	}
 	
 	buf.WriteString(">\n")
-	buf.WriteString("\t\t\t{/* Add your content here */}\n")
+	buf.WriteString("\t\t\t\n")
 	buf.WriteString(fmt.Sprintf("\t\t</%s>\n", pattern.TagName))
 	buf.WriteString("\t);\n")
 	buf.WriteString("};\n\n")
@@ -274,7 +255,6 @@ func generateJSXCode(pattern *ElementPattern) string {
 	return buf.String()
 }
 
-// enhanceWithAI uses AI to filter and enhance component suggestions
 func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns map[string]*ElementPattern) ([]ComponentSuggestion, error) {
 	if globalAIClient == nil || !globalAIClient.IsEnabled() {
 		return suggestions, nil
@@ -296,7 +276,6 @@ func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns
 		}
 
 		if pattern == nil || len(pattern.Examples) == 0 {
-			// Keep suggestion if we can't analyze it
 			enhancedSuggestions = append(enhancedSuggestions, suggestion)
 			continue
 		}
@@ -316,7 +295,6 @@ func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns
 
 		analyzedCount++
 
-		// Filter out components that AI says shouldn't be components
 		if !aiResult.ShouldBeComponent {
 			log.Printf("🚫 AI determined '%s' should NOT be a component: %s", suggestion.Name, aiResult.Reason)
 			skippedCount++
@@ -332,7 +310,6 @@ func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns
 			suggestion.Description = fmt.Sprintf("%s (AI: %s)", suggestion.Description, aiResult.Reason)
 		}
 
-		// Use AI-suggested props if available
 		if len(aiResult.Props) > 0 {
 			suggestion.Attributes = make(map[string]string)
 			for _, prop := range aiResult.Props {
@@ -354,7 +331,6 @@ func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns
 	return enhancedSuggestions, nil
 }
 
-// buildElementInfo creates a summary string about the element for AI analysis
 func buildElementInfo(pattern *ElementPattern, suggestion ComponentSuggestion) string {
 	var info strings.Builder
 	info.WriteString(fmt.Sprintf("Tag: %s\n", pattern.TagName))
@@ -383,7 +359,6 @@ func buildElementInfo(pattern *ElementPattern, suggestion ComponentSuggestion) s
 	return info.String()
 }
 
-// nodeToHTML converts a node to HTML string (simplified version)
 func nodeToHTML(n *html.Node) string {
 	var buf strings.Builder
 	renderNode(&buf, n)
@@ -412,14 +387,13 @@ func renderNode(buf *strings.Builder, n *html.Node) {
 		}
 		
 		if isVoidElement(n.Data) {
-			buf.WriteString(" />")
-			return
-		}
-		
-		buf.WriteString(">")
-		
-		// Render children
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
+		buf.WriteString(" />")
+		return
+	}
+	
+	buf.WriteString(">")
+	
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
 			renderNode(buf, c)
 		}
 		
@@ -432,7 +406,6 @@ func renderNode(buf *strings.Builder, n *html.Node) {
 	}
 }
 
-// isVoidElement checks if an element is void (self-closing)
 func isVoidElement(tagName string) bool {
 	voidElements := map[string]bool{
 		"area": true, "base": true, "br": true, "col": true, "embed": true,
@@ -450,10 +423,8 @@ func generateJSXCodeWithName(pattern *ElementPattern, componentName string) stri
 
 	var buf strings.Builder
 
-	// Component definition
 	buf.WriteString(fmt.Sprintf("const %s = ({ ", componentName))
 
-	// Add props based on common attributes
 	props := []string{}
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
@@ -479,7 +450,7 @@ func generateJSXCodeWithName(pattern *ElementPattern, componentName string) stri
 	}
 
 	buf.WriteString(">\n")
-	buf.WriteString("\t\t\t{/* Add your content here */}\n")
+	buf.WriteString("\t\t\t\n")
 	buf.WriteString(fmt.Sprintf("\t\t</%s>\n", pattern.TagName))
 	buf.WriteString("\t);\n")
 	buf.WriteString("};\n\n")
@@ -488,7 +459,6 @@ func generateJSXCodeWithName(pattern *ElementPattern, componentName string) stri
 	return buf.String()
 }
 
-// GetSuggestionsJSON returns component suggestions as JSON
 func GetSuggestionsJSON(htmlInput string) (string, error) {
 	suggestions, err := AnalyzeComponents(htmlInput)
 	if err != nil {
