@@ -51,7 +51,7 @@ debug-*
 debug-extracted/
 
 # Build artifacts
-dist/
+
 build/
 bin/
 
