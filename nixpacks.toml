@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["go"]
+
+[phases.build]
+cmds = ["go build -o out ./api"]
+
+[start]
+cmd = "./out"
