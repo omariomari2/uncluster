@@ -3,13 +3,14 @@ package zipper
 import (
 	"archive/zip"
 	"bytes"
+	"htmlfmt/internal/extractor"
 	"htmlfmt/internal/fetcher"
 	"io"
 	"log"
 )
 
-// CreateZipWithMetadata creates a zip archive containing HTML, CSS, JS files and external resources
-func CreateZipWithMetadata(html, css, js string, externalCSS, externalJS []fetcher.FetchedResource) ([]byte, error) {
+// CreateZipWithMetadata creates a zip archive containing HTML, inline resources, and external resources.
+func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineResource, externalCSS, externalJS []fetcher.FetchedResource) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := zip.NewWriter(&buf)
 
@@ -25,27 +26,45 @@ func CreateZipWithMetadata(html, css, js string, externalCSS, externalJS []fetch
 		}
 	}
 
-	// Add style.css file (inline styles)
-	if css != "" {
-		cssFile, err := writer.Create("style.css")
-		if err != nil {
-			return nil, err
-		}
-		_, err = io.WriteString(cssFile, css)
-		if err != nil {
-			return nil, err
+	// Add inline CSS files
+	if len(inlineCSS) > 0 {
+		log.Printf("Adding %d inline CSS files to zip", len(inlineCSS))
+		for _, resource := range inlineCSS {
+			if resource.Content == "" {
+				continue
+			}
+			cssFile, err := writer.Create(resource.Path)
+			if err != nil {
+				log.Printf("Failed to create %s in zip: %v", resource.Path, err)
+				continue
+			}
+			_, err = io.WriteString(cssFile, resource.Content)
+			if err != nil {
+				log.Printf("Failed to write %s to zip: %v", resource.Path, err)
+				continue
+			}
+			log.Printf("Added inline CSS: %s", resource.Path)
 		}
 	}
 
-	// Add script.js file (inline scripts)
-	if js != "" {
-		jsFile, err := writer.Create("script.js")
-		if err != nil {
-			return nil, err
-		}
-		_, err = io.WriteString(jsFile, js)
-		if err != nil {
-			return nil, err
+	// Add inline JS files
+	if len(inlineJS) > 0 {
+		log.Printf("Adding %d inline JS files to zip", len(inlineJS))
+		for _, resource := range inlineJS {
+			if resource.Content == "" {
+				continue
+			}
+			jsFile, err := writer.Create(resource.Path)
+			if err != nil {
+				log.Printf("Failed to create %s in zip: %v", resource.Path, err)
+				continue
+			}
+			_, err = io.WriteString(jsFile, resource.Content)
+			if err != nil {
+				log.Printf("Failed to write %s to zip: %v", resource.Path, err)
+				continue
+			}
+			log.Printf("Added inline JS: %s", resource.Path)
 		}
 	}
 

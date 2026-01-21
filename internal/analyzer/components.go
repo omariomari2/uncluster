@@ -133,7 +133,75 @@ func getAttributeValue(n *html.Node, attrName string) string {
 	return ""
 }
 
+// convertToValidPropName converts an HTML attribute name to a valid JavaScript identifier
+func convertToValidPropName(attr string) string {
+	// Handle special cases
+	if attr == "class" {
+		return "className"
+	}
+
+	// Check if it starts with data- or aria-
+	if strings.HasPrefix(attr, "data-") {
+		// data-sequence-title -> dataSequenceTitle
+		rest := strings.TrimPrefix(attr, "data-")
+		if rest == "" {
+			return "data"
+		}
+		camelRest := kebabToCamel(rest)
+		if len(camelRest) > 0 {
+			return "data" + strings.ToUpper(camelRest[:1]) + camelRest[1:]
+		}
+		return "data"
+	}
+	if strings.HasPrefix(attr, "aria-") {
+		// aria-label -> ariaLabel
+		rest := strings.TrimPrefix(attr, "aria-")
+		if rest == "" {
+			return "aria"
+		}
+		camelRest := kebabToCamel(rest)
+		if len(camelRest) > 0 {
+			return "aria" + strings.ToUpper(camelRest[:1]) + camelRest[1:]
+		}
+		return "aria"
+	}
+
+	// Convert kebab-case to camelCase
+	parts := strings.Split(attr, "-")
+	if len(parts) == 1 {
+		return attr
+	}
+
+	return kebabToCamel(attr)
+}
+
+func kebabToCamel(s string) string {
+	parts := strings.Split(s, "-")
+	if len(parts) == 1 {
+		return s
+	}
+
+	result := parts[0]
+	for i := 1; i < len(parts); i++ {
+		if len(parts[i]) > 0 {
+			result += strings.ToUpper(parts[i][:1]) + parts[i][1:]
+		}
+	}
+	return result
+}
+
 func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggestion {
+	// If AI is not available, use strict obvious-only detection
+	if globalAIClient == nil || !globalAIClient.IsEnabled() {
+		log.Printf("AI not configured - using strict fallback (obvious components only)")
+		return generateSuggestionsWithoutAI(patterns)
+	}
+
+	// If AI is available, generate all candidates (AI will filter them)
+	return generateAllCandidates(patterns)
+}
+
+func generateAllCandidates(patterns map[string]*ElementPattern) []ComponentSuggestion {
 	var suggestions []ComponentSuggestion
 
 	// Structural HTML elements that should never become React components
@@ -180,6 +248,97 @@ func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggest
 	}
 
 	return suggestions
+}
+
+func generateSuggestionsWithoutAI(patterns map[string]*ElementPattern) []ComponentSuggestion {
+	var suggestions []ComponentSuggestion
+
+	// Only these patterns are "obvious" components without AI
+	obviousPatterns := map[string]bool{
+		"card": true, "button": true, "btn": true,
+		"nav-item": true, "menu-item": true, "list-item": true,
+		"modal": true, "dialog": true, "popup": true,
+		"form-field": true, "input-group": true,
+		"tab": true, "accordion": true, "dropdown": true,
+		"badge": true, "tag": true, "chip": true,
+		"avatar": true, "thumbnail": true,
+		"alert": true, "toast": true, "notification": true,
+	}
+
+	// Structural HTML elements that should never become React components
+	structuralElements := map[string]bool{
+		"html": true, "head": true, "body": true, "title": true,
+		"meta": true, "link": true, "script": true, "style": true,
+		"base": true, "noscript": true,
+	}
+
+	for patternKey, pattern := range patterns {
+		// Skip structural HTML elements
+		if structuralElements[pattern.TagName] {
+			continue
+		}
+
+		// Must have a semantic class that matches obvious patterns
+		if !matchesObviousPattern(patternKey, obviousPatterns) {
+			continue
+		}
+
+		// Must appear at least 3 times to be worth componentizing
+		if pattern.Count < 3 {
+			continue
+		}
+
+		// Skip structural elements entirely without AI
+		if isStructuralElement(pattern.TagName) {
+			continue
+		}
+
+		suggestion := ComponentSuggestion{
+			Name:        generateComponentName(pattern.TagName, patternKey),
+			Description: generateDescription(pattern),
+			TagName:     pattern.TagName,
+			Attributes:  make(map[string]string),
+			Children:    make([]string, 0),
+			Count:       pattern.Count,
+			JSXCode:     generateJSXCode(pattern),
+		}
+
+		// Add common attributes as props
+		for attr, count := range pattern.Attributes {
+			if count >= pattern.Count/2 {
+				suggestion.Attributes[attr] = "{string}"
+			}
+		}
+
+		for childTag, count := range pattern.Children {
+			if count >= pattern.Count/2 {
+				suggestion.Children = append(suggestion.Children, childTag)
+			}
+		}
+
+		suggestions = append(suggestions, suggestion)
+	}
+
+	return suggestions
+}
+
+func matchesObviousPattern(patternKey string, patterns map[string]bool) bool {
+	lowerKey := strings.ToLower(patternKey)
+	for pattern := range patterns {
+		if strings.Contains(lowerKey, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func isStructuralElement(tagName string) bool {
+	structural := map[string]bool{
+		"div": true, "span": true, "section": true, "article": true,
+		"header": true, "footer": true, "main": true, "aside": true,
+		"p": true, "a": true, "ul": true, "ol": true, "li": true,
+	}
+	return structural[tagName]
 }
 
 // generateComponentName creates a component name from tag and pattern
@@ -232,12 +391,16 @@ func generateJSXCode(pattern *ElementPattern) string {
 	example := pattern.Examples[0]
 	var buf strings.Builder
 
-	buf.WriteString(fmt.Sprintf("const %s = ({ ", generateComponentName(pattern.TagName, generatePatternKey(example))))
+	componentName := generateComponentName(pattern.TagName, generatePatternKey(example))
+	buf.WriteString(fmt.Sprintf("const %s = ({ ", componentName))
 
 	props := []string{}
+	propMap := make(map[string]string) // Maps original attr to prop name
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
-			props = append(props, attr+"=\"{string}\"")
+			propName := convertToValidPropName(attr)
+			props = append(props, propName)
+			propMap[attr] = propName
 		}
 	}
 
@@ -254,7 +417,12 @@ func generateJSXCode(pattern *ElementPattern) string {
 	// Add props
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
-			buf.WriteString(fmt.Sprintf(" %s={%s}", attr, attr))
+			propName := propMap[attr]
+			jsxAttr := attr
+			if attr == "class" {
+				jsxAttr = "className"
+			}
+			buf.WriteString(fmt.Sprintf(" %s={%s}", jsxAttr, propName))
 		}
 	}
 
@@ -331,9 +499,7 @@ func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns
 		}
 
 		// Regenerate JSX code with updated information
-		if pattern != nil {
-			suggestion.JSXCode = generateJSXCodeWithName(pattern, suggestion.Name)
-		}
+		suggestion.JSXCode = generateJSXCodeWithName(pattern, suggestion.Name)
 
 		enhancedSuggestions = append(enhancedSuggestions, suggestion)
 		log.Printf("✅ AI approved component '%s' (confidence: %s)", suggestion.Name, aiResult.Confidence)
@@ -439,9 +605,12 @@ func generateJSXCodeWithName(pattern *ElementPattern, componentName string) stri
 	buf.WriteString(fmt.Sprintf("const %s = ({ ", componentName))
 
 	props := []string{}
+	propMap := make(map[string]string) // Maps original attr to prop name
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
-			props = append(props, attr+"=\"{string}\"")
+			propName := convertToValidPropName(attr)
+			props = append(props, propName)
+			propMap[attr] = propName
 		}
 	}
 
@@ -458,7 +627,12 @@ func generateJSXCodeWithName(pattern *ElementPattern, componentName string) stri
 	// Add props
 	for attr, count := range pattern.Attributes {
 		if count >= pattern.Count/2 {
-			buf.WriteString(fmt.Sprintf(" %s={%s}", attr, attr))
+			propName := propMap[attr]
+			jsxAttr := attr
+			if attr == "class" {
+				jsxAttr = "className"
+			}
+			buf.WriteString(fmt.Sprintf(" %s={%s}", jsxAttr, propName))
 		}
 	}
 

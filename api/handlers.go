@@ -179,7 +179,7 @@ func handleExport(c *fiber.Ctx) error {
 		len(extracted.ExternalCSS), len(extracted.ExternalJS))
 
 	log.Printf("🗜️ Creating zip archive...")
-	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.CSS, extracted.JS, extracted.ExternalCSS, extracted.ExternalJS)
+	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS)
 	if err != nil {
 		log.Printf("❌ Zip creation failed: %v", err)
 		return c.Status(500).JSON(Response{

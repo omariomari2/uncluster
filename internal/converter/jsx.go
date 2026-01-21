@@ -1,11 +1,15 @@
 package converter
 
 import (
+	"encoding/json"
 	"fmt"
 	"htmlfmt/internal/analyzer"
 	"htmlfmt/internal/fetcher"
-	"regexp"
+	"os"
 	"strings"
+	"time"
+
+	"golang.org/x/net/html"
 )
 
 type JSXConverter struct {
@@ -51,93 +55,169 @@ export default MainComponent
 	return component, nil
 }
 
-func (c *JSXConverter) convertHTMLToJSX(html string) (string, error) {
-	html = c.cleanHTML(html)
-
-	jsx := c.convertAttributes(html)
-
-	jsx = c.convertSelfClosingTags(jsx)
-
-	jsx = c.convertClassToClassName(jsx)
-
-	jsx = c.convertStyleAttributes(jsx)
-
-	jsx = c.convertEventHandlers(jsx)
-
-	jsx = c.convertExternalResources(jsx)
-
-	return jsx, nil
-}
-
-// cleanHTML removes unnecessary HTML structure
-func (c *JSXConverter) cleanHTML(html string) string {
-	// Remove DOCTYPE
-	html = regexp.MustCompile(`<!DOCTYPE[^>]*>`).ReplaceAllString(html, "")
-
-	// Remove html, head, body tags but keep their content
-	html = regexp.MustCompile(`<html[^>]*>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`</html>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<head[^>]*>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`</head>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<body[^>]*>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`</body>`).ReplaceAllString(html, "")
-
-	// Remove elements that shouldn't be in React component body
-	html = regexp.MustCompile(`<title[^>]*>.*?</title>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<meta[^>]*/>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<meta[^>]*>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<style[^>]*>.*?</style>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<script[^>]*>.*?</script>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<link[^>]*/>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<link[^>]*>`).ReplaceAllString(html, "")
-
-	return strings.TrimSpace(html)
-}
-
-func (c *JSXConverter) convertAttributes(html string) string {
-	html = regexp.MustCompile(`for="([^"]*)"`).ReplaceAllString(html, `htmlFor="$1"`)
-
-	html = regexp.MustCompile(`tabindex="([^"]*)"`).ReplaceAllString(html, `tabIndex="$1"`)
-
-	html = regexp.MustCompile(`readonly`).ReplaceAllString(html, `readOnly`)
-
-	html = regexp.MustCompile(`checked="([^"]*)"`).ReplaceAllString(html, `checked={$1 === "checked"}`)
-	html = regexp.MustCompile(`disabled="([^"]*)"`).ReplaceAllString(html, `disabled={$1 === "disabled"}`)
-	html = regexp.MustCompile(`selected="([^"]*)"`).ReplaceAllString(html, `selected={$1 === "selected"}`)
-
-	return html
-}
-
-func (c *JSXConverter) convertSelfClosingTags(html string) string {
-	selfClosingTags := []string{"br", "hr", "img", "input", "meta", "link", "area", "base", "col", "embed", "source", "track", "wbr"}
-
-	for _, tag := range selfClosingTags {
-		pattern := fmt.Sprintf(`<%s([^>]*)>`, tag)
-		replacement := fmt.Sprintf(`<%s$1 />`, tag)
-		html = regexp.MustCompile(pattern).ReplaceAllString(html, replacement)
+func (c *JSXConverter) convertHTMLToJSX(htmlContent string) (string, error) {
+	// #region agent log
+	logDebugJSX("convertHTMLToJSX", "entry", map[string]interface{}{"htmlLength": len(htmlContent)}, "B")
+	// #endregion
+	doc, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		// #region agent log
+		logDebugJSX("convertHTMLToJSX", "parse_error", map[string]interface{}{"error": err.Error()}, "B")
+		// #endregion
+		return "", fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
-	return html
+	var buf strings.Builder
+	c.renderNodeAsJSX(&buf, doc)
+	result := buf.String()
+	// #region agent log
+	hasHTMLComments := strings.Contains(result, "<!--")
+	hasClassAttr := strings.Contains(result, `class="`)
+	hasDoubleSlash := strings.Contains(result, "/ />")
+	logDebugJSX("convertHTMLToJSX", "result", map[string]interface{}{
+		"resultLength":   len(result),
+		"hasHTMLComments": hasHTMLComments,
+		"hasClassAttr":    hasClassAttr,
+		"hasDoubleSlash":  hasDoubleSlash,
+		"first300Chars":   safeSubstringJSX(result, 0, 300),
+	}, "B")
+	// #endregion
+	return result, nil
 }
 
-// convertClassToClassName converts class attributes to className
-func (c *JSXConverter) convertClassToClassName(html string) string {
-	return regexp.MustCompile(`class="([^"]*)"`).ReplaceAllString(html, `className="$1"`)
+func (c *JSXConverter) renderNodeAsJSX(buf *strings.Builder, n *html.Node) {
+	switch n.Type {
+	case html.DocumentNode:
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			c.renderNodeAsJSX(buf, child)
+		}
+	case html.ElementNode:
+		c.renderElementAsJSX(buf, n)
+	case html.TextNode:
+		c.renderTextAsJSX(buf, n)
+	case html.CommentNode:
+		c.renderCommentAsJSX(buf, n)
+	}
 }
 
-func (c *JSXConverter) convertStyleAttributes(html string) string {
-	stylePattern := `style="([^"]*)"`
-	html = regexp.MustCompile(stylePattern).ReplaceAllStringFunc(html, func(match string) string {
-		styleContent := regexp.MustCompile(`style="([^"]*)"`).FindStringSubmatch(match)[1]
-		jsxStyle := c.convertStyleString(styleContent)
-		return fmt.Sprintf(`style={%s}`, jsxStyle)
-	})
-
-	return html
+var jsxAttributeMap = map[string]string{
+	"class":          "className",
+	"for":            "htmlFor",
+	"tabindex":       "tabIndex",
+	"readonly":       "readOnly",
+	"maxlength":      "maxLength",
+	"cellpadding":    "cellPadding",
+	"cellspacing":    "cellSpacing",
+	"colspan":        "colSpan",
+	"rowspan":        "rowSpan",
+	"frameborder":    "frameBorder",
+	"allowfullscreen": "allowFullScreen",
+	"fill-rule":      "fillRule",
+	"clip-rule":      "clipRule",
+	"stroke-width":   "strokeWidth",
+	"stroke-linecap":  "strokeLinecap",
+	"stroke-linejoin": "strokeLinejoin",
+	"fill-opacity":   "fillOpacity",
+	"stroke-opacity": "strokeOpacity",
+	"text-anchor":    "textAnchor",
+	"font-family":    "fontFamily",
+	"font-size":      "fontSize",
+	"font-weight":    "fontWeight",
+	"text-decoration": "textDecoration",
 }
 
-// convertStyleString converts CSS style string to JSX style object
-func (c *JSXConverter) convertStyleString(style string) string {
+var jsxEventMap = map[string]string{
+	"onclick":   "onClick",
+	"onchange":  "onChange",
+	"onsubmit":  "onSubmit",
+	"onload":    "onLoad",
+	"onerror":   "onError",
+	"onkeydown": "onKeyDown",
+	"onkeyup":   "onKeyUp",
+	"onkeypress": "onKeyPress",
+	"onfocus":   "onFocus",
+	"onblur":    "onBlur",
+	"onmouseover": "onMouseOver",
+	"onmouseout":  "onMouseOut",
+	"onmousedown": "onMouseDown",
+	"onmouseup":   "onMouseUp",
+}
+
+var voidElements = map[string]bool{
+	"area": true, "base": true, "br": true, "col": true,
+	"embed": true, "hr": true, "img": true, "input": true,
+	"link": true, "meta": true, "source": true, "track": true, "wbr": true,
+}
+
+var skipElements = map[string]bool{
+	"html": true, "head": true, "body": true,
+	"title": true, "meta": true, "link": true,
+	"style": true, "script": true,
+}
+
+func (c *JSXConverter) renderElementAsJSX(buf *strings.Builder, n *html.Node) {
+	if skipElements[n.Data] {
+		if n.Data == "html" || n.Data == "body" {
+			for child := n.FirstChild; child != nil; child = child.NextSibling {
+				c.renderNodeAsJSX(buf, child)
+			}
+		}
+		return
+	}
+
+	buf.WriteString("<")
+	buf.WriteString(n.Data)
+
+	for _, attr := range n.Attr {
+		key, val := c.convertAttribute(attr)
+		if key != "" && val != "" {
+			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
+		}
+	}
+
+	if voidElements[n.Data] {
+		buf.WriteString(" />")
+		return
+	}
+
+	buf.WriteString(">")
+
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		c.renderNodeAsJSX(buf, child)
+	}
+
+	buf.WriteString("</")
+	buf.WriteString(n.Data)
+	buf.WriteString(">")
+}
+
+func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
+	key := attr.Key
+	val := attr.Val
+
+	if jsxKey, ok := jsxAttributeMap[key]; ok {
+		key = jsxKey
+	}
+
+	if jsxEvent, ok := jsxEventMap[key]; ok {
+		return jsxEvent, fmt.Sprintf("{() => { %s }}", val)
+	}
+
+	if key == "style" {
+		return "style", c.convertStyleToObject(val)
+	}
+
+	if key == "checked" || key == "disabled" || key == "selected" {
+		if val == key || val == "true" {
+			return key, "{true}"
+		}
+		return key, "{false}"
+	}
+
+	return key, fmt.Sprintf(`"%s"`, val)
+}
+
+func (c *JSXConverter) convertStyleToObject(style string) string {
 	styles := strings.Split(style, ";")
 	var jsxStyles []string
 
@@ -180,20 +260,66 @@ func (c *JSXConverter) kebabToCamel(s string) string {
 	return result
 }
 
-func (c *JSXConverter) convertEventHandlers(html string) string {
-	html = regexp.MustCompile(`onclick="([^"]*)"`).ReplaceAllString(html, `onClick={() => { $1 }}`)
-	html = regexp.MustCompile(`onchange="([^"]*)"`).ReplaceAllString(html, `onChange={() => { $1 }}`)
-	html = regexp.MustCompile(`onsubmit="([^"]*)"`).ReplaceAllString(html, `onSubmit={() => { $1 }}`)
-	html = regexp.MustCompile(`onload="([^"]*)"`).ReplaceAllString(html, `onLoad={() => { $1 }}`)
-
-	return html
+func (c *JSXConverter) renderTextAsJSX(buf *strings.Builder, n *html.Node) {
+	text := n.Data
+	// #region agent log
+	logDebugJSX("renderTextAsJSX", "entry", map[string]interface{}{
+		"textLength": len(text),
+		"hasHTMLComment": strings.Contains(text, "<!--"),
+		"first100Chars": safeSubstringJSX(text, 0, 100),
+	}, "B")
+	// #endregion
+	
+	// Check if text contains HTML comments and convert them
+	if strings.Contains(text, "<!--") && strings.Contains(text, "-->") {
+		// Convert HTML comments to JSX comments
+		text = convertHTMLCommentsInText(text)
+		// #region agent log
+		logDebugJSX("renderTextAsJSX", "converted_comments", map[string]interface{}{
+			"convertedText": safeSubstringJSX(text, 0, 200),
+		}, "B")
+		// #endregion
+	}
+	
+	trimmed := strings.TrimSpace(text)
+	if trimmed != "" {
+		buf.WriteString(trimmed)
+	}
 }
 
-func (c *JSXConverter) convertExternalResources(html string) string {
-	html = regexp.MustCompile(`<link[^>]*rel="stylesheet"[^>]*>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`<script[^>]*src="[^"]*"[^>]*></script>`).ReplaceAllString(html, "")
+// convertHTMLCommentsInText converts HTML comments <!-- --> to JSX comments {/* */}
+func convertHTMLCommentsInText(text string) string {
+	// Use regex to find and replace HTML comments
+	// Pattern: <!-- ... -->
+	result := text
+	start := 0
+	for {
+		commentStart := strings.Index(result[start:], "<!--")
+		if commentStart == -1 {
+			break
+		}
+		commentStart += start
+		commentEnd := strings.Index(result[commentStart:], "-->")
+		if commentEnd == -1 {
+			break
+		}
+		commentEnd += commentStart + 3
+		
+		// Extract comment content (between <!-- and -->)
+		commentContent := result[commentStart+4 : commentEnd-3]
+		
+		// Replace with JSX comment
+		jsxComment := "{/*" + commentContent + "*/}"
+		result = result[:commentStart] + jsxComment + result[commentEnd:]
+		start = commentStart + len(jsxComment)
+	}
+	return result
+}
 
-	return html
+func (c *JSXConverter) renderCommentAsJSX(buf *strings.Builder, n *html.Node) {
+	buf.WriteString("{/*")
+	buf.WriteString(n.Data)
+	buf.WriteString("*/}")
 }
 
 func (c *JSXConverter) generateCSSImports(css string) string {
@@ -223,7 +349,7 @@ func (c *JSXConverter) generateJSCode(js string) string {
 
 	for _, jsFile := range c.ExternalJS {
 		if jsFile.Error == nil {
-			jsCode.WriteString(fmt.Sprintf("\n", jsFile.Filename))
+			jsCode.WriteString("\n")
 			jsCode.WriteString(jsFile.Content)
 			jsCode.WriteString("\n")
 		}
@@ -280,4 +406,32 @@ export default %s
 	}
 
 	return components, nil
+}
+
+func logDebugJSX(location, message string, data map[string]interface{}, hypothesisId string) {
+	logEntry := map[string]interface{}{
+		"sessionId":    "debug-session",
+		"runId":        "run1",
+		"hypothesisId": hypothesisId,
+		"location":     "jsx.go:" + location,
+		"message":      message,
+		"data":         data,
+		"timestamp":    time.Now().UnixMilli(),
+	}
+	jsonData, _ := json.Marshal(logEntry)
+	logPath := ".cursor/debug.log"
+	if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+		fmt.Fprintln(f, string(jsonData))
+		f.Close()
+	}
+}
+
+func safeSubstringJSX(s string, start, end int) string {
+	if start >= len(s) {
+		return ""
+	}
+	if end > len(s) {
+		end = len(s)
+	}
+	return s[start:end]
 }

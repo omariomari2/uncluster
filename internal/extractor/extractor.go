@@ -15,8 +15,15 @@ type ExtractedContent struct {
 	HTML        string                    // cleaned HTML with rewritten links
 	CSS         string                    // inline CSS from <style> tags
 	JS          string                    // inline JS from <script> tags
+	InlineCSS   []InlineResource          // extracted inline CSS files in document order
+	InlineJS    []InlineResource          // extracted inline JS files in document order
 	ExternalCSS []fetcher.FetchedResource // downloaded external CSS files
 	ExternalJS  []fetcher.FetchedResource // downloaded external JS files
+}
+
+type InlineResource struct {
+	Path    string
+	Content string
 }
 
 func Extract(htmlContent string) (*ExtractedContent, error) {
@@ -28,7 +35,12 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 	var cssContent strings.Builder
 	var jsContent strings.Builder
 
-	extractStylesAndScripts(doc, &cssContent, &jsContent)
+	var inlineCSS []InlineResource
+	var inlineJS []InlineResource
+	cssIndex := 0
+	jsIndex := 0
+
+	extractInlineResources(doc, &cssContent, &jsContent, &inlineCSS, &inlineJS, &cssIndex, &jsIndex)
 
 	cssURLs, jsURLs := findExternalResourceURLs(doc)
 
@@ -46,10 +58,6 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 
 	rewriteExternalLinks(doc, externalCSS, externalJS)
 
-	removeStyleAndScriptTags(doc)
-
-	addLinksToDocument(doc)
-
 	var buf bytes.Buffer
 	err = html.Render(&buf, doc)
 	if err != nil {
@@ -65,6 +73,8 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 		HTML:        formattedHTML,
 		CSS:         cssContent.String(),
 		JS:          jsContent.String(),
+		InlineCSS:   inlineCSS,
+		InlineJS:    inlineJS,
 		ExternalCSS: externalCSS,
 		ExternalJS:  externalJS,
 	}, nil
@@ -101,6 +111,103 @@ func extractStylesAndScripts(n *html.Node, cssContent, jsContent *strings.Builde
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		extractStylesAndScripts(c, cssContent, jsContent)
 	}
+}
+
+func extractInlineResources(n *html.Node, cssContent, jsContent *strings.Builder, inlineCSS, inlineJS *[]InlineResource, cssIndex, jsIndex *int) {
+	if n.Type == html.ElementNode {
+		if n.Data == "style" {
+			content := collectTextContent(n)
+			if strings.TrimSpace(content) != "" {
+				*cssIndex++
+				filename := fmt.Sprintf("inline/style-%d.css", *cssIndex)
+				*inlineCSS = append(*inlineCSS, InlineResource{Path: filename, Content: content})
+				cssContent.WriteString(content)
+				if !strings.HasSuffix(content, "\n") {
+					cssContent.WriteString("\n")
+				}
+				replacement := buildStyleLinkNode(n, filename)
+				replaceNode(n, replacement)
+				return
+			}
+		} else if n.Data == "script" && !hasAttribute(n, "src") {
+			content := collectTextContent(n)
+			if strings.TrimSpace(content) != "" {
+				*jsIndex++
+				filename := fmt.Sprintf("inline/script-%d.js", *jsIndex)
+				*inlineJS = append(*inlineJS, InlineResource{Path: filename, Content: content})
+				jsContent.WriteString(content)
+				if !strings.HasSuffix(content, "\n") {
+					jsContent.WriteString("\n")
+				}
+				replacement := buildScriptSrcNode(n, filename)
+				replaceNode(n, replacement)
+				return
+			}
+		}
+	}
+
+	for c := n.FirstChild; c != nil; {
+		next := c.NextSibling
+		extractInlineResources(c, cssContent, jsContent, inlineCSS, inlineJS, cssIndex, jsIndex)
+		c = next
+	}
+}
+
+func collectTextContent(n *html.Node) string {
+	var content strings.Builder
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.TextNode {
+			content.WriteString(c.Data)
+		}
+	}
+	return content.String()
+}
+
+func buildStyleLinkNode(original *html.Node, href string) *html.Node {
+	attrs := []html.Attribute{
+		{Key: "rel", Val: "stylesheet"},
+		{Key: "href", Val: href},
+	}
+	attrs = append(attrs, copyAttributesExcluding(original.Attr, map[string]bool{
+		"rel":  true,
+		"href": true,
+	})...)
+	return &html.Node{
+		Type: html.ElementNode,
+		Data: "link",
+		Attr: attrs,
+	}
+}
+
+func buildScriptSrcNode(original *html.Node, src string) *html.Node {
+	attrs := []html.Attribute{{Key: "src", Val: src}}
+	attrs = append(attrs, copyAttributesExcluding(original.Attr, map[string]bool{
+		"src": true,
+	})...)
+	return &html.Node{
+		Type: html.ElementNode,
+		Data: "script",
+		Attr: attrs,
+	}
+}
+
+func copyAttributesExcluding(attrs []html.Attribute, skip map[string]bool) []html.Attribute {
+	var copied []html.Attribute
+	for _, attr := range attrs {
+		if skip[strings.ToLower(attr.Key)] {
+			continue
+		}
+		copied = append(copied, attr)
+	}
+	return copied
+}
+
+func replaceNode(oldNode, newNode *html.Node) {
+	if oldNode.Parent == nil {
+		return
+	}
+	oldNode.Parent.InsertBefore(newNode, oldNode)
+	oldNode.Parent.RemoveChild(oldNode)
 }
 
 func removeStyleAndScriptTags(n *html.Node) {
@@ -258,7 +365,7 @@ func findExternalURLs(n *html.Node, cssURLs, jsURLs *[]string) {
 		if n.Data == "link" {
 			href := getAttribute(n, "href")
 			rel := getAttribute(n, "rel")
-			if href != "" && rel == "stylesheet" && isExternalURL(href) {
+			if href != "" && rel == "stylesheet" && isExternalURL(href) && !isGoogleFontsURL(href) {
 				*cssURLs = append(*cssURLs, href)
 			}
 		} else if n.Data == "script" {
@@ -283,8 +390,21 @@ func getAttribute(n *html.Node, key string) string {
 	return ""
 }
 
+func hasAttribute(n *html.Node, key string) bool {
+	for _, attr := range n.Attr {
+		if attr.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
 func isExternalURL(urlStr string) bool {
 	return strings.HasPrefix(urlStr, "http://") || strings.HasPrefix(urlStr, "https://")
+}
+
+func isGoogleFontsURL(urlStr string) bool {
+	return strings.Contains(urlStr, "fonts.googleapis.com")
 }
 
 func rewriteExternalLinks(doc *html.Node, externalCSS, externalJS []fetcher.FetchedResource) {
