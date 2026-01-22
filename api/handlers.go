@@ -48,6 +48,8 @@ func setupRoutes(app *fiber.App) {
 
 	api.Post("/export-nodejs", handleExportNodeJS)
 
+	api.Post("/export-nodejs-ejs", handleExportNodeJSEJS)
+
 	api.Get("/health", handleHealth)
 
 	app.Static("/", "./dist")
@@ -270,6 +272,82 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 
 	c.Set("Content-Type", "application/zip")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", projectName))
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+
+	return c.Send(zipData)
+}
+
+func handleExportNodeJSEJS(c *fiber.Ctx) error {
+	log.Printf("Node.js EJS project export request received from %s", c.IP())
+
+	var req FormatRequest
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("Request parsing failed: %v", err)
+		return c.Status(400).JSON(Response{
+			Success: false,
+			Error:   "Invalid request body",
+		})
+	}
+
+	if strings.TrimSpace(req.HTML) == "" {
+		log.Printf("Empty HTML content")
+		return c.Status(400).JSON(Response{
+			Success: false,
+			Error:   "HTML content is required",
+		})
+	}
+
+	log.Printf("Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
+
+	extracted, err := extractor.Extract(req.HTML)
+	if err != nil {
+		log.Printf("Extraction failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	log.Printf("Extraction results - HTML: %d chars, CSS: %d chars, JS: %d chars",
+		len(extracted.HTML), len(extracted.CSS), len(extracted.JS))
+	log.Printf("External resources - CSS: %d files, JS: %d files",
+		len(extracted.ExternalCSS), len(extracted.ExternalJS))
+
+	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
+
+	config := &nodejs.EJSProjectConfig{
+		ProjectName: projectName,
+		HTML:        extracted.HTML,
+		InlineCSS:   extracted.InlineCSS,
+		InlineJS:    extracted.InlineJS,
+		ExternalCSS: extracted.ExternalCSS,
+		ExternalJS:  extracted.ExternalJS,
+	}
+
+	log.Printf("Generating Node.js EJS project: %s", projectName)
+	projectFiles, err := nodejs.GenerateEJSProject(config)
+	if err != nil {
+		log.Printf("Project generation failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	log.Printf("Creating zip archive...")
+	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
+	if err != nil {
+		log.Printf("Zip creation failed: %v", err)
+		return c.Status(500).JSON(Response{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	log.Printf("Node.js EJS project export completed (size: %d bytes)", len(zipData))
+
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-ejs.zip\"", projectName))
 	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
 
 	return c.Send(zipData)

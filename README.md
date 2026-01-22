@@ -101,6 +101,19 @@ The tool includes AI-powered component analysis using Cloudflare Workers AI with
    CLOUDFLARE_AI_MODEL=@cf/meta/llama-3-8b-instruct
    ```
 
+### Worker AI SDK Option (Alternative)
+
+If you prefer using the Cloudflare Workers AI SDK, deploy the worker in `workers/component-analyzer` and set:
+
+```bash
+export CLOUDFLARE_WORKER_URL="https://your-worker.example.workers.dev"
+export CLOUDFLARE_WORKER_TOKEN="your_worker_token"  # Optional if you do not enforce auth
+export CLOUDFLARE_WORKER_MODEL="@cf/meta/llama-3-8b-instruct"  # Optional
+```
+
+When `CLOUDFLARE_WORKER_URL` is set, the server uses the worker endpoint and skips direct API credentials.
+See `workers/component-analyzer/README.md` for deployment steps.
+
 6. **Start the Server**
    - The server will automatically detect Cloudflare credentials and enable AI analysis
    - You'll see a log message: `✅ Cloudflare AI initialized (Model: @cf/meta/llama-3-8b-instruct)`

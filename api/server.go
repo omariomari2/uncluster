@@ -47,6 +47,22 @@ func main() {
 }
 
 func initCloudflareAI() {
+	workerURL := os.Getenv("CLOUDFLARE_WORKER_URL")
+	workerToken := os.Getenv("CLOUDFLARE_WORKER_TOKEN")
+	workerModel := os.Getenv("CLOUDFLARE_WORKER_MODEL")
+	if workerURL != "" {
+		config := ai.WorkerAIConfig{
+			URL:     workerURL,
+			Token:   workerToken,
+			Model:   workerModel,
+			Enabled: true,
+		}
+		client := ai.NewWorkerAIClient(config)
+		analyzer.SetAIClient(client)
+		log.Printf("Workers AI initialized (URL: %s)", workerURL)
+		return
+	}
+
 	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
 	apiToken := os.Getenv("CLOUDFLARE_API_TOKEN")
 	model := os.Getenv("CLOUDFLARE_AI_MODEL")

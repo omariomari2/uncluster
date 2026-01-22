@@ -18,6 +18,7 @@ function resetToInitialState() {
     const uploadButton = document.querySelector('.button.upload');
     const actionButtons = [
         document.querySelector('.button.first'),
+        document.querySelector('.button.fifth'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
         document.querySelector('.button.fourth')
@@ -42,6 +43,7 @@ function resetToInitialState() {
 function showActionButtons() {
     const actionButtons = [
         document.querySelector('.button.first'),
+        document.querySelector('.button.fifth'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
         document.querySelector('.button.fourth')
@@ -58,6 +60,7 @@ function initializeButtonStates() {
     const uploadButton = document.querySelector('.button.upload');
     const actionButtons = [
         document.querySelector('.button.first'),
+        document.querySelector('.button.fifth'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
         document.querySelector('.button.fourth')
@@ -314,6 +317,48 @@ async function exportTSXProject() {
     }
 }
 
+async function exportEJSProject() {
+    if (!uploadedHTML) {
+        showToast('Please upload an HTML file first', 'error');
+        return;
+    }
+
+    const button = document.querySelector('.button.fifth');
+    setButtonLoading(button, true);
+
+    try {
+        const response = await fetch(`${API_BASE}/api/export-nodejs-ejs`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ html: uploadedHTML }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Export failed');
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const contentDisposition = response.headers.get('Content-Disposition');
+        const filename = contentDisposition
+            ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || 'project-ejs.zip'
+            : 'project-ejs.zip';
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('EJS project exported and downloaded!', 'success');
+    } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+    } finally {
+        setButtonLoading(button, false);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initializeButtonStates();
     
@@ -355,6 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const convertButton = document.querySelector('.button.third');
     const exportZipButton = document.querySelector('.button.fourth');
     const exportTSXButton = document.querySelector('.button.first');
+    const exportEJSButton = document.querySelector('.button.fifth');
 
     if (uploadButton) {
         uploadButton.addEventListener('click', (e) => {
@@ -388,6 +434,13 @@ document.addEventListener('DOMContentLoaded', () => {
         exportTSXButton.addEventListener('click', (e) => {
             e.preventDefault();
             exportTSXProject();
+        });
+    }
+
+    if (exportEJSButton) {
+        exportEJSButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            exportEJSProject();
         });
     }
 });

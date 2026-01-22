@@ -19,6 +19,10 @@
   --tertiaryBg: hsla(220, 70%, 60%, 1%);
   --tertiaryFg: hsl(220, 70%, 80%);
   --tertiaryHi: hsla(220, 70%, 70%, 25%);
+  --ejs: hsl(35, 90%, 60%);
+  --ejsBg: hsla(35, 90%, 60%, 1%);
+  --ejsFg: hsl(35, 90%, 88%);
+  --ejsHi: hsla(35, 90%, 70%, 25%);
   --upload: hsl(0, 0%, 0%);
   --uploadBg: hsla(0, 0%, 0%, 30%);
   --uploadFg: hsl(0, 0%, 100%);
@@ -326,6 +330,21 @@ span {
   right: 11%;
 }
 
+.button.fifth {
+  bottom: 28%;
+  right: 24%;
+}
+
+.button.fifth > button {
+  background-color: var(--ejsBg);
+  box-shadow: 0px -3px 15px 0px var(--ejsHi) inset;
+  color: var(--ejsFg);
+}
+
+.button.fifth > span {
+  background-color: var(--ejsHi);
+}
+
 .button.sec > button {
   background-color: var(--accentBg);
   box-shadow: 0px -3px 15px 0px var(--accentHi) inset;
@@ -385,7 +404,8 @@ span {
 .button.first,
 .button.sec,
 .button.third,
-.button.fourth {
+.button.fourth,
+.button.fifth {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
