@@ -153,6 +153,80 @@ nav {
   color: var(--primary);
 }
 
+.dropdown-content.dropdown-downloads {
+  min-width: 360px;
+  max-width: 360px;
+}
+
+.download-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.download-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.download-toggle input {
+  accent-color: var(--primary);
+}
+
+.download-toggle.disabled {
+  opacity: 0.6;
+}
+
+.download-hint {
+  font-size: 0.7rem;
+  color: var(--textDim);
+  margin: 0;
+}
+
+.download-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+
+.download-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--textDim);
+}
+
+.download-field-title {
+  color: var(--textDim);
+}
+
+.download-field input {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  font-family: monospace;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.download-field input:focus {
+  outline: 1px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.download-note {
+  font-size: 0.65rem;
+  color: var(--textDim);
+  margin: 0;
+}
+
 .nested-trigger {
   cursor: pointer;
   position: relative;

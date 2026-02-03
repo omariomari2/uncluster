@@ -3,6 +3,176 @@ const API_BASE = window.location.origin.includes('localhost') && !window.locatio
     : '';
 
 let uploadedHTML = '';
+const DOWNLOAD_STORAGE_KEY = 'downloadSettings';
+const DOWNLOAD_DEFAULTS = {
+    useFilePicker: true,
+    formatName: 'formatted.html',
+    jsxName: 'converted.jsx',
+    zipName: 'extracted.zip',
+    tsxName: 'project.zip',
+    ejsName: 'project-ejs.zip',
+};
+
+const PICKER_TYPES = {
+    html: [{ description: 'HTML File', accept: { 'text/html': ['.html'] } }],
+    jsx: [{ description: 'JSX File', accept: { 'text/plain': ['.jsx'] } }],
+    zip: [{ description: 'ZIP Archive', accept: { 'application/zip': ['.zip'] } }],
+};
+
+function supportsFilePicker() {
+    return 'showSaveFilePicker' in window;
+}
+
+function sanitizeFilename(name, fallback) {
+    const trimmed = (name || '').trim();
+    if (!trimmed) {
+        return fallback;
+    }
+    return trimmed.replace(/[\\\/<>:"|?*]+/g, '-');
+}
+
+function ensureExtension(name, extension) {
+    if (!extension) {
+        return name;
+    }
+    const lowerName = name.toLowerCase();
+    const lowerExt = extension.toLowerCase();
+    if (lowerName.endsWith(lowerExt)) {
+        return name;
+    }
+    return `${name}${extension}`;
+}
+
+function resolveDownloadName(inputId, fallbackName, extension) {
+    const input = document.getElementById(inputId);
+    const rawName = input ? input.value : '';
+    const sanitized = sanitizeFilename(rawName, fallbackName);
+    return ensureExtension(sanitized, extension);
+}
+
+function loadDownloadSettings() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(DOWNLOAD_STORAGE_KEY) || '{}');
+        return { ...DOWNLOAD_DEFAULTS, ...stored };
+    } catch (error) {
+        return { ...DOWNLOAD_DEFAULTS };
+    }
+}
+
+function storeDownloadSettings() {
+    const settings = {
+        useFilePicker: document.getElementById('download-picker-toggle')?.checked ?? false,
+        formatName: document.getElementById('download-name-format')?.value ?? '',
+        jsxName: document.getElementById('download-name-jsx')?.value ?? '',
+        zipName: document.getElementById('download-name-zip')?.value ?? '',
+        tsxName: document.getElementById('download-name-tsx')?.value ?? '',
+        ejsName: document.getElementById('download-name-ejs')?.value ?? '',
+    };
+    try {
+        localStorage.setItem(DOWNLOAD_STORAGE_KEY, JSON.stringify(settings));
+    } catch (error) {
+        console.warn('Failed to store download settings.', error);
+    }
+}
+
+function initializeDownloadSettings() {
+    const settings = loadDownloadSettings();
+    const toggle = document.getElementById('download-picker-toggle');
+    const hint = document.getElementById('download-picker-hint');
+    const supportsPicker = supportsFilePicker();
+
+    if (toggle) {
+        toggle.checked = supportsPicker ? settings.useFilePicker : false;
+        toggle.disabled = !supportsPicker;
+        const toggleWrapper = toggle.closest('.download-toggle');
+        if (toggleWrapper) {
+            toggleWrapper.classList.toggle('disabled', !supportsPicker);
+        }
+    }
+
+    if (hint) {
+        hint.textContent = supportsPicker
+            ? 'Use the save dialog to choose a location and edit the final name.'
+            : 'Save dialog not supported in this browser. Use browser settings to choose a location.';
+    }
+
+    const fields = [
+        { id: 'download-name-format', value: settings.formatName },
+        { id: 'download-name-jsx', value: settings.jsxName },
+        { id: 'download-name-zip', value: settings.zipName },
+        { id: 'download-name-tsx', value: settings.tsxName },
+        { id: 'download-name-ejs', value: settings.ejsName },
+    ];
+
+    fields.forEach((field) => {
+        const input = document.getElementById(field.id);
+        if (input) {
+            input.value = field.value;
+        }
+    });
+
+    if (toggle) {
+        toggle.addEventListener('change', storeDownloadSettings);
+    }
+
+    const inputs = document.querySelectorAll('.download-settings input');
+    inputs.forEach((input) => {
+        if (input.id !== 'download-picker-toggle') {
+            input.addEventListener('input', storeDownloadSettings);
+        }
+    });
+}
+
+function shouldUseFilePicker() {
+    const toggle = document.getElementById('download-picker-toggle');
+    return !!(toggle && toggle.checked && supportsFilePicker());
+}
+
+function triggerBrowserDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function saveBlobWithPicker(blob, filename, pickerTypes) {
+    if (!supportsFilePicker()) {
+        return 'fallback';
+    }
+
+    try {
+        const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: pickerTypes,
+            excludeAcceptAllOption: false,
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return 'saved';
+    } catch (error) {
+        if (error && error.name === 'AbortError') {
+            showToast('Save canceled', 'info');
+            return 'canceled';
+        }
+        showToast('Save dialog failed, using browser download', 'error');
+        return 'fallback';
+    }
+}
+
+async function downloadBlob(blob, filename, pickerTypes) {
+    if (shouldUseFilePicker()) {
+        const result = await saveBlobWithPicker(blob, filename, pickerTypes);
+        if (result !== 'fallback') {
+            return result;
+        }
+    }
+
+    triggerBrowserDownload(blob, filename);
+    return 'downloaded';
+}
 
 function changeUploadButtonToFinish() {
     const uploadButton = document.querySelector('.button.upload');
@@ -181,13 +351,11 @@ async function formatHTML() {
 
         if (data.success) {
             const blob = new Blob([data.data], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'formatted.html';
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('HTML formatted and downloaded!', 'success');
+            const filename = resolveDownloadName('download-name-format', DOWNLOAD_DEFAULTS.formatName, '.html');
+            const result = await downloadBlob(blob, filename, PICKER_TYPES.html);
+            if (result !== 'canceled') {
+                showToast('HTML formatted and downloaded!', 'success');
+            }
         } else {
             showToast(data.error || 'Formatting failed', 'error');
         }
@@ -220,13 +388,11 @@ async function convertToJSX() {
 
         if (data.success) {
             const blob = new Blob([data.data], { type: 'text/jsx' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'converted.jsx';
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('HTML converted to JSX and downloaded!', 'success');
+            const filename = resolveDownloadName('download-name-jsx', DOWNLOAD_DEFAULTS.jsxName, '.jsx');
+            const result = await downloadBlob(blob, filename, PICKER_TYPES.jsx);
+            if (result !== 'canceled') {
+                showToast('HTML converted to JSX and downloaded!', 'success');
+            }
         } else {
             showToast(data.error || 'Conversion failed', 'error');
         }
@@ -261,13 +427,11 @@ async function exportZip() {
         }
 
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'extracted.zip';
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('Files extracted and downloaded as ZIP!', 'success');
+        const filename = resolveDownloadName('download-name-zip', DOWNLOAD_DEFAULTS.zipName, '.zip');
+        const result = await downloadBlob(blob, filename, PICKER_TYPES.zip);
+        if (result !== 'canceled') {
+            showToast('Files extracted and downloaded as ZIP!', 'success');
+        }
     } catch (error) {
         showToast('Error: ' + error.message, 'error');
     } finally {
@@ -299,17 +463,15 @@ async function exportTSXProject() {
         }
 
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
         const contentDisposition = response.headers.get('Content-Disposition');
-        const filename = contentDisposition
+        const serverFilename = contentDisposition
             ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || 'project.zip'
             : 'project.zip';
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('TSX project exported and downloaded!', 'success');
+        const filename = resolveDownloadName('download-name-tsx', serverFilename, '.zip');
+        const result = await downloadBlob(blob, filename, PICKER_TYPES.zip);
+        if (result !== 'canceled') {
+            showToast('TSX project exported and downloaded!', 'success');
+        }
     } catch (error) {
         showToast('Error: ' + error.message, 'error');
     } finally {
@@ -341,17 +503,15 @@ async function exportEJSProject() {
         }
 
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
         const contentDisposition = response.headers.get('Content-Disposition');
-        const filename = contentDisposition
+        const serverFilename = contentDisposition
             ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || 'project-ejs.zip'
             : 'project-ejs.zip';
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('EJS project exported and downloaded!', 'success');
+        const filename = resolveDownloadName('download-name-ejs', serverFilename, '.zip');
+        const result = await downloadBlob(blob, filename, PICKER_TYPES.zip);
+        if (result !== 'canceled') {
+            showToast('EJS project exported and downloaded!', 'success');
+        }
     } catch (error) {
         showToast('Error: ' + error.message, 'error');
     } finally {
@@ -361,6 +521,7 @@ async function exportEJSProject() {
 
 document.addEventListener('DOMContentLoaded', () => {
     initializeButtonStates();
+    initializeDownloadSettings();
     
     const dropdowns = document.querySelectorAll('.dropdown');
     

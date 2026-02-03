@@ -61,6 +61,7 @@ bin/
 .env.development.local
 .env.test.local
 .env.production.local
+.cursor
 
 # Node modules (if any frontend dependencies are added)
 node_modules/

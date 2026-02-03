@@ -130,6 +130,9 @@ func extractInlineResources(n *html.Node, cssContent, jsContent *strings.Builder
 				return
 			}
 		} else if n.Data == "script" && !hasAttribute(n, "src") {
+			if !isJavaScriptType(getAttribute(n, "type")) {
+				return
+			}
 			content := collectTextContent(n)
 			if strings.TrimSpace(content) != "" {
 				*jsIndex++
@@ -161,6 +164,22 @@ func collectTextContent(n *html.Node) string {
 		}
 	}
 	return content.String()
+}
+
+func isJavaScriptType(scriptType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(scriptType))
+	if normalized == "" {
+		return true
+	}
+	if strings.Contains(normalized, ";") {
+		normalized = strings.TrimSpace(strings.SplitN(normalized, ";", 2)[0])
+	}
+	switch normalized {
+	case "text/javascript", "application/javascript", "text/ecmascript", "application/ecmascript", "application/x-javascript", "module":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildStyleLinkNode(original *html.Node, href string) *html.Node {
