@@ -13,7 +13,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// EJSProjectConfig represents the configuration for generating an EJS project.
 type EJSProjectConfig struct {
 	ProjectName string
 	HTML        string
@@ -29,7 +28,6 @@ type ejsComponent struct {
 	Node *html.Node
 }
 
-// GenerateEJSProject creates a complete Express + EJS project from the given configuration.
 func GenerateEJSProject(config *EJSProjectConfig) (*ProjectFiles, error) {
 	files := make(map[string]string)
 

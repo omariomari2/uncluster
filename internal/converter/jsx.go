@@ -1,13 +1,10 @@
 package converter
 
 import (
-	"encoding/json"
 	"fmt"
 	"htmlfmt/internal/analyzer"
 	"htmlfmt/internal/fetcher"
-	"os"
 	"strings"
-	"time"
 
 	"golang.org/x/net/html"
 )
@@ -23,19 +20,15 @@ func ConvertToJSX(html, css, js string, externalCSS []fetcher.FetchedResource, e
 		ExternalJS:  externalJS,
 	}
 
-	// Convert HTML to JSX
 	jsx, err := converter.convertHTMLToJSX(html)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert HTML to JSX: %w", err)
 	}
 
-	// Add CSS imports
 	cssImports := converter.generateCSSImports(css)
 
-	// Add JS functionality
 	jsCode := converter.generateJSCode(js)
 
-	// Combine everything
 	component := fmt.Sprintf(`import React from 'react'
 %s
 
@@ -56,32 +49,14 @@ export default MainComponent
 }
 
 func (c *JSXConverter) convertHTMLToJSX(htmlContent string) (string, error) {
-	// #region agent log
-	logDebugJSX("convertHTMLToJSX", "entry", map[string]interface{}{"htmlLength": len(htmlContent)}, "B")
-	// #endregion
 	doc, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
-		// #region agent log
-		logDebugJSX("convertHTMLToJSX", "parse_error", map[string]interface{}{"error": err.Error()}, "B")
-		// #endregion
 		return "", fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
 	var buf strings.Builder
 	c.renderNodeAsJSX(&buf, doc)
 	result := buf.String()
-	// #region agent log
-	hasHTMLComments := strings.Contains(result, "<!--")
-	hasClassAttr := strings.Contains(result, `class="`)
-	hasDoubleSlash := strings.Contains(result, "/ />")
-	logDebugJSX("convertHTMLToJSX", "result", map[string]interface{}{
-		"resultLength":   len(result),
-		"hasHTMLComments": hasHTMLComments,
-		"hasClassAttr":    hasClassAttr,
-		"hasDoubleSlash":  hasDoubleSlash,
-		"first300Chars":   safeSubstringJSX(result, 0, 300),
-	}, "B")
-	// #endregion
 	return result, nil
 }
 
@@ -101,42 +76,42 @@ func (c *JSXConverter) renderNodeAsJSX(buf *strings.Builder, n *html.Node) {
 }
 
 var jsxAttributeMap = map[string]string{
-	"class":          "className",
-	"for":            "htmlFor",
-	"tabindex":       "tabIndex",
-	"readonly":       "readOnly",
-	"maxlength":      "maxLength",
-	"cellpadding":    "cellPadding",
-	"cellspacing":    "cellSpacing",
-	"colspan":        "colSpan",
-	"rowspan":        "rowSpan",
-	"frameborder":    "frameBorder",
+	"class":           "className",
+	"for":             "htmlFor",
+	"tabindex":        "tabIndex",
+	"readonly":        "readOnly",
+	"maxlength":       "maxLength",
+	"cellpadding":     "cellPadding",
+	"cellspacing":     "cellSpacing",
+	"colspan":         "colSpan",
+	"rowspan":         "rowSpan",
+	"frameborder":     "frameBorder",
 	"allowfullscreen": "allowFullScreen",
-	"fill-rule":      "fillRule",
-	"clip-rule":      "clipRule",
-	"stroke-width":   "strokeWidth",
+	"fill-rule":       "fillRule",
+	"clip-rule":       "clipRule",
+	"stroke-width":    "strokeWidth",
 	"stroke-linecap":  "strokeLinecap",
 	"stroke-linejoin": "strokeLinejoin",
-	"fill-opacity":   "fillOpacity",
-	"stroke-opacity": "strokeOpacity",
-	"text-anchor":    "textAnchor",
-	"font-family":    "fontFamily",
-	"font-size":      "fontSize",
-	"font-weight":    "fontWeight",
+	"fill-opacity":    "fillOpacity",
+	"stroke-opacity":  "strokeOpacity",
+	"text-anchor":     "textAnchor",
+	"font-family":     "fontFamily",
+	"font-size":       "fontSize",
+	"font-weight":     "fontWeight",
 	"text-decoration": "textDecoration",
 }
 
 var jsxEventMap = map[string]string{
-	"onclick":   "onClick",
-	"onchange":  "onChange",
-	"onsubmit":  "onSubmit",
-	"onload":    "onLoad",
-	"onerror":   "onError",
-	"onkeydown": "onKeyDown",
-	"onkeyup":   "onKeyUp",
-	"onkeypress": "onKeyPress",
-	"onfocus":   "onFocus",
-	"onblur":    "onBlur",
+	"onclick":     "onClick",
+	"onchange":    "onChange",
+	"onsubmit":    "onSubmit",
+	"onload":      "onLoad",
+	"onerror":     "onError",
+	"onkeydown":   "onKeyDown",
+	"onkeyup":     "onKeyUp",
+	"onkeypress":  "onKeyPress",
+	"onfocus":     "onFocus",
+	"onblur":      "onBlur",
 	"onmouseover": "onMouseOver",
 	"onmouseout":  "onMouseOut",
 	"onmousedown": "onMouseDown",
@@ -243,7 +218,6 @@ func (c *JSXConverter) convertStyleToObject(style string) string {
 	return fmt.Sprintf("{%s}", strings.Join(jsxStyles, ", "))
 }
 
-// kebabToCamel converts kebab-case to camelCase
 func (c *JSXConverter) kebabToCamel(s string) string {
 	parts := strings.Split(s, "-")
 	if len(parts) == 1 {
@@ -262,35 +236,19 @@ func (c *JSXConverter) kebabToCamel(s string) string {
 
 func (c *JSXConverter) renderTextAsJSX(buf *strings.Builder, n *html.Node) {
 	text := n.Data
-	// #region agent log
-	logDebugJSX("renderTextAsJSX", "entry", map[string]interface{}{
-		"textLength": len(text),
-		"hasHTMLComment": strings.Contains(text, "<!--"),
-		"first100Chars": safeSubstringJSX(text, 0, 100),
-	}, "B")
-	// #endregion
-	
-	// Check if text contains HTML comments and convert them
+
 	if strings.Contains(text, "<!--") && strings.Contains(text, "-->") {
 		// Convert HTML comments to JSX comments
 		text = convertHTMLCommentsInText(text)
-		// #region agent log
-		logDebugJSX("renderTextAsJSX", "converted_comments", map[string]interface{}{
-			"convertedText": safeSubstringJSX(text, 0, 200),
-		}, "B")
-		// #endregion
 	}
-	
+
 	trimmed := strings.TrimSpace(text)
 	if trimmed != "" {
 		buf.WriteString(trimmed)
 	}
 }
 
-// convertHTMLCommentsInText converts HTML comments <!-- --> to JSX comments {/* */}
 func convertHTMLCommentsInText(text string) string {
-	// Use regex to find and replace HTML comments
-	// Pattern: <!-- ... -->
 	result := text
 	start := 0
 	for {
@@ -304,11 +262,9 @@ func convertHTMLCommentsInText(text string) string {
 			break
 		}
 		commentEnd += commentStart + 3
-		
-		// Extract comment content (between <!-- and -->)
+
 		commentContent := result[commentStart+4 : commentEnd-3]
-		
-		// Replace with JSX comment
+
 		jsxComment := "{/*" + commentContent + "*/}"
 		result = result[:commentStart] + jsxComment + result[commentEnd:]
 		start = commentStart + len(jsxComment)
@@ -358,9 +314,7 @@ func (c *JSXConverter) generateJSCode(js string) string {
 	return jsCode.String()
 }
 
-// AnalyzeAndConvert analyzes HTML and converts to optimized JSX components
 func AnalyzeAndConvert(html string) ([]string, error) {
-	// Use existing analyzer to get component suggestions
 	suggestions, err := analyzer.AnalyzeComponents(html)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze HTML: %w", err)
@@ -381,7 +335,6 @@ func AnalyzeAndConvert(html string) ([]string, error) {
 			continue
 		}
 
-		// Fallback: create basic JSX from the component info
 		jsx := fmt.Sprintf(`<div className="%s">
   {/* %s */}
 </div>`, suggestion.TagName, suggestion.Description)
@@ -406,32 +359,4 @@ export default %s
 	}
 
 	return components, nil
-}
-
-func logDebugJSX(location, message string, data map[string]interface{}, hypothesisId string) {
-	logEntry := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run1",
-		"hypothesisId": hypothesisId,
-		"location":     "jsx.go:" + location,
-		"message":      message,
-		"data":         data,
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	jsonData, _ := json.Marshal(logEntry)
-	logPath := ".cursor/debug.log"
-	if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-		fmt.Fprintln(f, string(jsonData))
-		f.Close()
-	}
-}
-
-func safeSubstringJSX(s string, start, end int) string {
-	if start >= len(s) {
-		return ""
-	}
-	if end > len(s) {
-		end = len(s)
-	}
-	return s[start:end]
 }

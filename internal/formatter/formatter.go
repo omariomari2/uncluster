@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	stdhtml "html"
-	"golang.org/x/net/html"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 func Format(htmlInput string) (string, error) {
@@ -32,7 +33,6 @@ func formatNode(buf *bytes.Buffer, n *html.Node, depth int, inline bool) error {
 			}
 		}
 	case html.ElementNode:
-		// Handle self-closing/void elements
 		if isVoidElement(n.Data) {
 			writeIndent(buf, depth, inline)
 			writeOpenTag(buf, n)
@@ -147,9 +147,9 @@ func shouldInlineChildren(n *html.Node) bool {
 
 func isRawTextElement(tagName string) bool {
 	rawTextElements := map[string]bool{
-		"script": true,
-		"style":  true,
-		"pre":    true,
+		"script":   true,
+		"style":    true,
+		"pre":      true,
 		"textarea": true,
 	}
 	return rawTextElements[strings.ToLower(tagName)]
@@ -166,51 +166,50 @@ func isVoidElement(tagName string) bool {
 
 func isBlockElement(tagName string) bool {
 	blockElements := map[string]bool{
-		"address": true,
-		"article": true,
-		"aside": true,
+		"address":    true,
+		"article":    true,
+		"aside":      true,
 		"blockquote": true,
-		"body": true,
-		"canvas": true,
-		"dd": true,
-		"div": true,
-		"dl": true,
-		"dt": true,
-		"fieldset": true,
+		"body":       true,
+		"canvas":     true,
+		"dd":         true,
+		"div":        true,
+		"dl":         true,
+		"dt":         true,
+		"fieldset":   true,
 		"figcaption": true,
-		"figure": true,
-		"footer": true,
-		"form": true,
-		"h1": true,
-		"h2": true,
-		"h3": true,
-		"h4": true,
-		"h5": true,
-		"h6": true,
-		"head": true,
-		"header": true,
-		"hr": true,
-		"html": true,
-		"li": true,
-		"main": true,
-		"nav": true,
-		"noscript": true,
-		"ol": true,
-		"p": true,
-		"section": true,
-		"table": true,
-		"tbody": true,
-		"td": true,
-		"tfoot": true,
-		"th": true,
-		"thead": true,
-		"tr": true,
-		"ul": true,
+		"figure":     true,
+		"footer":     true,
+		"form":       true,
+		"h1":         true,
+		"h2":         true,
+		"h3":         true,
+		"h4":         true,
+		"h5":         true,
+		"h6":         true,
+		"head":       true,
+		"header":     true,
+		"hr":         true,
+		"html":       true,
+		"li":         true,
+		"main":       true,
+		"nav":        true,
+		"noscript":   true,
+		"ol":         true,
+		"p":          true,
+		"section":    true,
+		"table":      true,
+		"tbody":      true,
+		"td":         true,
+		"tfoot":      true,
+		"th":         true,
+		"thead":      true,
+		"tr":         true,
+		"ul":         true,
 	}
 	return blockElements[strings.ToLower(tagName)]
 }
 
-// hasChildren checks if a node has child nodes
 func hasChildren(n *html.Node) bool {
 	return n.FirstChild != nil
 }

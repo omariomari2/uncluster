@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// WorkerAIConfig defines connection settings for a Workers AI-backed endpoint.
 type WorkerAIConfig struct {
 	URL     string
 	Token   string
@@ -18,7 +17,6 @@ type WorkerAIConfig struct {
 	Enabled bool
 }
 
-// WorkerAIClient uses a Cloudflare Worker to run component analysis.
 type WorkerAIClient struct {
 	config     WorkerAIConfig
 	httpClient *http.Client
@@ -44,10 +42,10 @@ type workerAIRequest struct {
 }
 
 type workerAIResponse struct {
-	Success bool                   `json:"success"`
+	Success bool                     `json:"success"`
 	Result  *ComponentAnalysisResult `json:"result,omitempty"`
-	Raw     string                 `json:"raw,omitempty"`
-	Error   string                 `json:"error,omitempty"`
+	Raw     string                   `json:"raw,omitempty"`
+	Error   string                   `json:"error,omitempty"`
 }
 
 func (c *WorkerAIClient) AnalyzeHTMLForComponents(htmlContent string, elementInfo string) (*ComponentAnalysisResult, error) {

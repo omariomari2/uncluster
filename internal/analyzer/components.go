@@ -38,19 +38,14 @@ func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
-	// Collect all elements and their patterns
 	elementPatterns := make(map[string]*ElementPattern)
 	collectPatterns(doc, elementPatterns)
 
-	// Generate initial suggestions based on patterns
 	suggestions := generateSuggestions(elementPatterns)
 
-	// If AI is enabled, enhance and filter suggestions
 	if globalAIClient != nil && globalAIClient.IsEnabled() {
-		log.Printf("🤖 Using AI to enhance component analysis...")
 		enhancedSuggestions, err := enhanceWithAI(htmlInput, suggestions, elementPatterns)
 		if err != nil {
-			log.Printf("⚠️ AI analysis failed, using pattern-based suggestions: %v", err)
 			return suggestions, nil
 		}
 		return enhancedSuggestions, nil
@@ -59,7 +54,6 @@ func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
 	return suggestions, nil
 }
 
-// ElementPattern represents a pattern found in the HTML
 type ElementPattern struct {
 	TagName    string
 	Attributes map[string]int
@@ -85,7 +79,6 @@ func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 		pattern := patterns[patternKey]
 		pattern.Count++
 
-		// Collect attributes
 		for _, attr := range n.Attr {
 			pattern.Attributes[attr.Key]++
 		}
@@ -96,7 +89,6 @@ func collectPatterns(n *html.Node, patterns map[string]*ElementPattern) {
 			}
 		}
 
-		// Keep examples (limit to 3)
 		if len(pattern.Examples) < 3 {
 			pattern.Examples = append(pattern.Examples, n)
 		}
@@ -204,7 +196,6 @@ func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggest
 func generateAllCandidates(patterns map[string]*ElementPattern) []ComponentSuggestion {
 	var suggestions []ComponentSuggestion
 
-	// Structural HTML elements that should never become React components
 	structuralElements := map[string]bool{
 		"html": true, "head": true, "body": true, "title": true,
 		"meta": true, "link": true, "script": true, "style": true,

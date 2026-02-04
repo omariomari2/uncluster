@@ -9,7 +9,6 @@ import (
 	"htmlfmt/internal/formatter"
 	"htmlfmt/internal/nodejs"
 	"htmlfmt/internal/zipper"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -50,8 +49,10 @@ func main() {
 		port = "3000"
 	}
 
-	log.Printf("Server starting on port %s", port)
-	log.Fatal(app.Listen(":" + port))
+	if err := app.Listen(":" + port); err != nil {
+		fmt.Printf("Server failed to start: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func initCloudflareAI() {
@@ -67,7 +68,6 @@ func initCloudflareAI() {
 		}
 		client := ai.NewWorkerAIClient(config)
 		analyzer.SetAIClient(client)
-		log.Printf("Workers AI initialized (URL: %s)", workerURL)
 		return
 	}
 
@@ -76,8 +76,6 @@ func initCloudflareAI() {
 	model := os.Getenv("CLOUDFLARE_AI_MODEL")
 
 	if accountID == "" || apiToken == "" {
-		log.Printf("Cloudflare AI not configured (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN required)")
-		log.Printf("Component analysis will use pattern-based detection only")
 		return
 	}
 
@@ -95,8 +93,6 @@ func initCloudflareAI() {
 	client := ai.NewCloudflareClient(config)
 	analyzer.SetAIClient(client)
 
-	log.Printf("Cloudflare AI initialized (Model: %s)", model)
-	log.Printf("AI-powered component analysis is enabled")
 }
 
 type FormatRequest struct {
@@ -230,11 +226,8 @@ func handleAnalyze(c *fiber.Ctx) error {
 }
 
 func handleExport(c *fiber.Ctx) error {
-	log.Printf("Export request received from %s", c.IP())
-
 	var req FormatRequest
 	if err := c.BodyParser(&req); err != nil {
-		log.Printf("Export request parsing failed: %v", err)
 		return c.Status(400).JSON(Response{
 			Success: false,
 			Error:   "Invalid request body",
@@ -242,32 +235,22 @@ func handleExport(c *fiber.Ctx) error {
 	}
 
 	if strings.TrimSpace(req.HTML) == "" {
-		log.Printf("Export request: empty HTML content")
 		return c.Status(400).JSON(Response{
 			Success: false,
 			Error:   "HTML content is required",
 		})
 	}
 
-	log.Printf("Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
 	extracted, err := extractor.Extract(req.HTML)
 	if err != nil {
-		log.Printf("Extraction failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
 		})
 	}
 
-	log.Printf("Extraction results - HTML: %d chars, CSS: %d chars, JS: %d chars",
-		len(extracted.HTML), len(extracted.CSS), len(extracted.JS))
-	log.Printf("External resources - CSS: %d files, JS: %d files",
-		len(extracted.ExternalCSS), len(extracted.ExternalJS))
-
-	log.Printf("Creating zip archive...")
 	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS)
 	if err != nil {
-		log.Printf("Zip creation failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
@@ -278,16 +261,12 @@ func handleExport(c *fiber.Ctx) error {
 	c.Set("Content-Disposition", "attachment; filename=\"extracted.zip\"")
 	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
 
-	log.Printf("Export completed successfully (zip size: %d bytes)", len(zipData))
 	return c.Send(zipData)
 }
 
 func handleExportNodeJS(c *fiber.Ctx) error {
-	log.Printf("Node.js project export request received from %s", c.IP())
-
 	var req FormatRequest
 	if err := c.BodyParser(&req); err != nil {
-		log.Printf("Request parsing failed: %v", err)
 		return c.Status(400).JSON(Response{
 			Success: false,
 			Error:   "Invalid request body",
@@ -295,28 +274,19 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 	}
 
 	if strings.TrimSpace(req.HTML) == "" {
-		log.Printf("Empty HTML content")
 		return c.Status(400).JSON(Response{
 			Success: false,
 			Error:   "HTML content is required",
 		})
 	}
 
-	log.Printf("Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
-
 	extracted, err := extractor.Extract(req.HTML)
 	if err != nil {
-		log.Printf("Extraction failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
 		})
 	}
-
-	log.Printf("Extraction results - HTML: %d chars, CSS: %d chars, JS: %d chars",
-		len(extracted.HTML), len(extracted.CSS), len(extracted.JS))
-	log.Printf("External resources - CSS: %d files, JS: %d files",
-		len(extracted.ExternalCSS), len(extracted.ExternalJS))
 
 	rewrittenHTML := extracted.RewriteForNodeJS()
 
@@ -332,27 +302,21 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 		ExternalJS:     extracted.ExternalJS,
 	}
 
-	log.Printf("Generating Node.js project: %s", projectName)
 	projectFiles, err := nodejs.GenerateProject(config)
 	if err != nil {
-		log.Printf("Project generation failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
 		})
 	}
 
-	log.Printf("Creating zip archive...")
 	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
 	if err != nil {
-		log.Printf("Zip creation failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
 		})
 	}
-
-	log.Printf("Node.js project export completed (size: %d bytes)", len(zipData))
 
 	c.Set("Content-Type", "application/zip")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", projectName))
@@ -362,11 +326,8 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 }
 
 func handleExportNodeJSEJS(c *fiber.Ctx) error {
-	log.Printf("Node.js EJS project export request received from %s", c.IP())
-
 	var req FormatRequest
 	if err := c.BodyParser(&req); err != nil {
-		log.Printf("Request parsing failed: %v", err)
 		return c.Status(400).JSON(Response{
 			Success: false,
 			Error:   "Invalid request body",
@@ -374,28 +335,19 @@ func handleExportNodeJSEJS(c *fiber.Ctx) error {
 	}
 
 	if strings.TrimSpace(req.HTML) == "" {
-		log.Printf("Empty HTML content")
 		return c.Status(400).JSON(Response{
 			Success: false,
 			Error:   "HTML content is required",
 		})
 	}
 
-	log.Printf("Extracting CSS/JS from HTML (length: %d chars)", len(req.HTML))
-
 	extracted, err := extractor.Extract(req.HTML)
 	if err != nil {
-		log.Printf("Extraction failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
 		})
 	}
-
-	log.Printf("Extraction results - HTML: %d chars, CSS: %d chars, JS: %d chars",
-		len(extracted.HTML), len(extracted.CSS), len(extracted.JS))
-	log.Printf("External resources - CSS: %d files, JS: %d files",
-		len(extracted.ExternalCSS), len(extracted.ExternalJS))
 
 	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
 
@@ -408,27 +360,21 @@ func handleExportNodeJSEJS(c *fiber.Ctx) error {
 		ExternalJS:  extracted.ExternalJS,
 	}
 
-	log.Printf("Generating Node.js EJS project: %s", projectName)
 	projectFiles, err := nodejs.GenerateEJSProject(config)
 	if err != nil {
-		log.Printf("Project generation failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
 		})
 	}
 
-	log.Printf("Creating zip archive...")
 	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
 	if err != nil {
-		log.Printf("Zip creation failed: %v", err)
 		return c.Status(500).JSON(Response{
 			Success: false,
 			Error:   err.Error(),
 		})
 	}
-
-	log.Printf("Node.js EJS project export completed (size: %d bytes)", len(zipData))
 
 	c.Set("Content-Type", "application/zip")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-ejs.zip\"", projectName))

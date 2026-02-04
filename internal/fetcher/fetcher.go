@@ -3,7 +3,6 @@ package fetcher
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -11,28 +10,22 @@ import (
 	"time"
 )
 
-// FetchedResource represents a downloaded external resource
 type FetchedResource struct {
 	URL      string
 	Content  string
 	Filename string
-	Type     string // "css" or "js"
+	Type     string
 	Error    error
 }
 
-// FetchExternalResources downloads external resources from the given URLs
 func FetchExternalResources(urls []string, resourceType string) []FetchedResource {
 	if len(urls) == 0 {
 		return []FetchedResource{}
 	}
 
-	log.Printf("🌐 Fetching %d external %s resources...", len(urls), resourceType)
-
-	// Configure HTTP client with timeout and redirect handling
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Follow redirects but limit to 10 redirects
 			if len(via) >= 10 {
 				return http.ErrUseLastResponse
 			}
@@ -44,12 +37,8 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 	usedFilenames := make(map[string]int)
 
 	for _, resourceURL := range urls {
-		log.Printf("📥 Fetching %s: %s", resourceType, resourceURL)
-
-		// Download the resource
 		resp, err := client.Get(resourceURL)
 		if err != nil {
-			log.Printf("❌ Failed to fetch %s: %v", resourceURL, err)
 			results = append(results, FetchedResource{
 				URL:   resourceURL,
 				Type:  resourceType,
@@ -59,10 +48,8 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 		}
 		defer resp.Body.Close()
 
-		// Check if the response is successful
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			err := fmt.Errorf("HTTP %d", resp.StatusCode)
-			log.Printf("❌ Failed to fetch %s: %v", resourceURL, err)
 			results = append(results, FetchedResource{
 				URL:   resourceURL,
 				Type:  resourceType,
@@ -71,10 +58,8 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 			continue
 		}
 
-		// Read the response body
 		content, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Printf("❌ Failed to read response body for %s: %v", resourceURL, err)
 			results = append(results, FetchedResource{
 				URL:   resourceURL,
 				Type:  resourceType,
@@ -83,11 +68,8 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 			continue
 		}
 
-		// Generate a safe filename
 		filename := generateSafeFilename(resourceURL, resourceType, usedFilenames)
 		usedFilenames[filename]++
-
-		log.Printf("✅ Successfully fetched %s (%d bytes)", resourceURL, len(content))
 
 		results = append(results, FetchedResource{
 			URL:      resourceURL,
@@ -98,32 +80,17 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 		})
 	}
 
-	successCount := 0
-	for _, result := range results {
-		if result.Error == nil {
-			successCount++
-		}
-	}
-
-	log.Printf("📊 Fetch summary: %d/%d %s resources downloaded successfully",
-		successCount, len(urls), resourceType)
-
 	return results
 }
 
-// generateSafeFilename creates a local, descriptive filename from a URL
 func generateSafeFilename(resourceURL, resourceType string, usedFilenames map[string]int) string {
-	// Parse the URL to extract the path
 	parsedURL, err := url.Parse(resourceURL)
 	if err != nil {
-		// Fallback to a generic name if URL parsing fails
 		return fmt.Sprintf("external-%d.%s", len(usedFilenames), getExtension(resourceType))
 	}
 
-	// Generate a descriptive filename based on the URL
 	filename := generateDescriptiveFilename(parsedURL, resourceType)
 
-	// Sanitize the filename
 	filename = sanitizeFilename(filename)
 
 	// Handle duplicates by adding a counter
@@ -139,7 +106,6 @@ func generateSafeFilename(resourceURL, resourceType string, usedFilenames map[st
 	return filename
 }
 
-// generateDescriptiveFilename creates a more descriptive local filename
 func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string {
 	hostname := parsedURL.Host
 	path := parsedURL.Path
@@ -207,7 +173,6 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 	return filename
 }
 
-// isVersionNumber checks if a string looks like a version number
 func isVersionNumber(s string) bool {
 	// Check for common version patterns
 	if strings.HasPrefix(s, "v") && len(s) > 1 {
@@ -229,7 +194,6 @@ func isVersionNumber(s string) bool {
 	return false
 }
 
-// getExtension returns the appropriate file extension for the resource type
 func getExtension(resourceType string) string {
 	switch resourceType {
 	case "css":
@@ -241,7 +205,6 @@ func getExtension(resourceType string) string {
 	}
 }
 
-// sanitizeFilename removes or replaces unsafe characters for filesystem use
 func sanitizeFilename(filename string) string {
 	// Replace unsafe characters with underscores
 	unsafeChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", " "}

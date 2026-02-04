@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -62,7 +61,7 @@ type ComponentAnalysisResult struct {
 	ComponentName     string   `json:"componentName"`
 	Props             []string `json:"props"`
 	Pattern           string   `json:"pattern"`
-	Confidence        string   `json:"confidence"` // "high", "medium", "low"
+	Confidence        string   `json:"confidence"`
 }
 
 func (c *CloudflareClient) AnalyzeHTMLForComponents(htmlContent string, elementInfo string) (*ComponentAnalysisResult, error) {
@@ -120,8 +119,6 @@ Respond with a JSON object containing:
 	req.Header.Set("Authorization", "Bearer "+c.config.APIToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Printf("🤖 Sending HTML element to Cloudflare AI for analysis...")
-
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
@@ -134,7 +131,6 @@ Respond with a JSON object containing:
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("⚠️ Cloudflare AI returned status %d: %s", resp.StatusCode, string(body))
 		return nil, fmt.Errorf("Cloudflare AI API returned status %d", resp.StatusCode)
 	}
 
@@ -152,7 +148,6 @@ Respond with a JSON object containing:
 
 	result, err := c.parseAIResponse(aiResponse.Result.Response)
 	if err != nil {
-		log.Printf("⚠️ Failed to parse AI response as JSON, using fallback: %v", err)
 		result = &ComponentAnalysisResult{
 			ShouldBeComponent: strings.Contains(strings.ToLower(aiResponse.Result.Response), "shouldbecomponent: true") ||
 				strings.Contains(strings.ToLower(aiResponse.Result.Response), "\"shouldbecomponent\": true"),
@@ -160,8 +155,6 @@ Respond with a JSON object containing:
 			Confidence: "medium",
 		}
 	}
-
-	log.Printf("✅ AI analysis complete: shouldBeComponent=%v, confidence=%s", result.ShouldBeComponent, result.Confidence)
 
 	return result, nil
 }

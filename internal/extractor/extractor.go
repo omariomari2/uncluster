@@ -5,20 +5,19 @@ import (
 	"fmt"
 	"htmlfmt/internal/fetcher"
 	"htmlfmt/internal/formatter"
-	"log"
 	"strings"
 
 	"golang.org/x/net/html"
 )
 
 type ExtractedContent struct {
-	HTML        string                    // cleaned HTML with rewritten links
-	CSS         string                    // inline CSS from <style> tags
-	JS          string                    // inline JS from <script> tags
-	InlineCSS   []InlineResource          // extracted inline CSS files in document order
-	InlineJS    []InlineResource          // extracted inline JS files in document order
-	ExternalCSS []fetcher.FetchedResource // downloaded external CSS files
-	ExternalJS  []fetcher.FetchedResource // downloaded external JS files
+	HTML        string
+	CSS         string
+	JS          string
+	InlineCSS   []InlineResource
+	InlineJS    []InlineResource
+	ExternalCSS []fetcher.FetchedResource
+	ExternalJS  []fetcher.FetchedResource
 }
 
 type InlineResource struct {
@@ -43,8 +42,6 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 	extractInlineResources(doc, &cssContent, &jsContent, &inlineCSS, &inlineJS, &cssIndex, &jsIndex)
 
 	cssURLs, jsURLs := findExternalResourceURLs(doc)
-
-	log.Printf("🔍 Found %d external CSS URLs and %d external JS URLs", len(cssURLs), len(jsURLs))
 
 	var externalCSS []fetcher.FetchedResource
 	var externalJS []fetcher.FetchedResource
