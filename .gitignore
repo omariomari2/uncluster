@@ -8,6 +8,9 @@ htmlfmt
 htmlfmt-server
 htmlfmt.exe
 htmlfmt-server.exe
+/uncluster-split
+/uncluster-split-macos
+/uncluster-split-linux
 
 # Test binary, built with `go test -c`
 *.test
@@ -49,6 +52,11 @@ debug-*
 *-export.zip
 *-extracted/
 debug-extracted/
+testing/
+tests/
+testdata/
+test_out
+.tmp/
 
 # Build artifacts
 
@@ -101,3 +109,7 @@ site/
 
 # Plan files
 *.plan.md
+
+# Automation pipeline artifacts
+.runs/
+pipeline.config.json

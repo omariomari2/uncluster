@@ -11,8 +11,8 @@ build: build-cli build-server
 # Build CLI tool
 build-cli:
 	@echo "Building CLI tool..."
-	@go build -o htmlfmt cmd/htmlfmt/main.go
-	@echo "CLI tool built: htmlfmt"
+	@go build -o uncluster-split ./cmd/uncluster-split
+	@echo "CLI tool built: uncluster-split"
 
 # Build web server
 build-server:
@@ -33,23 +33,23 @@ test:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	@rm -f htmlfmt htmlfmt-server
+	@rm -f htmlfmt htmlfmt-server uncluster-split uncluster-split.exe uncluster-split-macos uncluster-split-linux htmlfmt-server.exe htmlfmt-server-macos htmlfmt-server-linux
 	@echo "Clean complete"
 
 # Cross-platform builds
 build-windows:
 	@echo "Building for Windows..."
-	@GOOS=windows GOARCH=amd64 go build -o htmlfmt.exe cmd/htmlfmt/main.go
+	@GOOS=windows GOARCH=amd64 go build -o uncluster-split.exe ./cmd/uncluster-split
 	@GOOS=windows GOARCH=amd64 go build -o htmlfmt-server.exe main.go
 
 build-macos:
 	@echo "Building for macOS..."
-	@GOOS=darwin GOARCH=amd64 go build -o htmlfmt-macos cmd/htmlfmt/main.go
+	@GOOS=darwin GOARCH=amd64 go build -o uncluster-split-macos ./cmd/uncluster-split
 	@GOOS=darwin GOARCH=amd64 go build -o htmlfmt-server-macos main.go
 
 build-linux:
 	@echo "Building for Linux..."
-	@GOOS=linux GOARCH=amd64 go build -o htmlfmt-linux cmd/htmlfmt/main.go
+	@GOOS=linux GOARCH=amd64 go build -o uncluster-split-linux ./cmd/uncluster-split
 	@GOOS=linux GOARCH=amd64 go build -o htmlfmt-server-linux main.go
 
 # Install dependencies
