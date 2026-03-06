@@ -106,7 +106,6 @@ func organizeSourceFiles(config *ProjectConfig, files map[string]string) {
 	mainComponent, err := converter.ConvertToJSX(config.HTML, config.CSS, config.JS, config.ExternalCSS, config.ExternalJS)
 	if err != nil {
 		log.Printf("⚠️ Failed to convert HTML to JSX: %v", err)
-		// Fallback to basic JSX
 		mainComponent = fmt.Sprintf(`import React from 'react'
 
 function MainComponent() {

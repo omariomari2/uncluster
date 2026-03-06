@@ -1,4 +1,3 @@
-# Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
@@ -12,26 +11,18 @@ htmlfmt-server.exe
 /uncluster-split-macos
 /uncluster-split-linux
 
-# Test binary, built with `go test -c`
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
 go.work
 
-# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -40,12 +31,10 @@ go.work
 ehthumbs.db
 Thumbs.db
 
-# Temporary files
 *.tmp
 *.temp
 *.log
 
-# Test files and directories
 test-*
 debug-*
 *-test.zip
@@ -58,12 +47,9 @@ testdata/
 test_out
 .tmp/
 
-# Build artifacts
-
 build/
 bin/
 
-# Environment files
 .env
 .env.local
 .env.development.local
@@ -71,45 +57,35 @@ bin/
 .env.production.local
 .cursor
 
-# Node modules (if any frontend dependencies are added)
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Coverage reports
 coverage/
 *.cover
 *.coverprofile
 
-# Profiling files
 *.prof
 
-# Air live reload (if used)
 tmp/
 
-# Local development files
 *.local
 local-*
 
-# Documentation build files
 docs/_build/
 site/
 
-# Backup files
 *.bak
 *.backup
 *.old
 
-# Archive files (unless they're intentionally tracked)
 *.zip
 *.tar.gz
 *.rar
 *.7z
 
-# Plan files
 *.plan.md
 
-# Automation pipeline artifacts
 .runs/
 pipeline.config.json

@@ -72,10 +72,8 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const PORT = process.env.PORT || 3000
 
-// Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, 'dist')))
 
-// Handle client-side routing - return index.html for all routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'))
 })
@@ -161,30 +159,26 @@ const tsconfigTemplate = `{
   "exclude": ["node_modules", "dist"]
 }`
 
-const gitignoreTemplate = `# Dependencies
+const gitignoreTemplate = `
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build outputs
 dist/
 build/
 
-# Environment variables
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -193,69 +187,50 @@ build/
 ehthumbs.db
 Thumbs.db
 
-# Logs
 logs
 *.log
 
-# Runtime data
 pids
 *.pid
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
 coverage/
 
-# nyc test coverage
 .nyc_output
 
-# Dependency directories
 jspm_packages/
 
-# Optional npm cache directory
 .npm
 
-# Optional eslint cache
 .eslintcache
 
-# Microbundle cache
 .rpt2_cache/
 .rts2_cache_cjs/
 .rts2_cache_es/
 .rts2_cache_umd/
 
-# Optional REPL history
 .node_repl_history
 
-# Output of 'npm pack'
 *.tgz
 
-# Yarn Integrity file
 .yarn-integrity
 
-# parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
 
-# next.js build output
 .next
 
-# nuxt.js build output
 .nuxt
 
-# vuepress build output
 .vuepress/dist
 
-# Serverless directories
 .serverless
 
-# FuseBox cache
 .fusebox/
 
-# DynamoDB Local files
 .dynamodb/
 
-# TernJS port file
 .tern-port
 `
 

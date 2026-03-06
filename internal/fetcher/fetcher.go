@@ -93,7 +93,6 @@ func generateSafeFilename(resourceURL, resourceType string, usedFilenames map[st
 
 	filename = sanitizeFilename(filename)
 
-	// Handle duplicates by adding a counter
 	originalFilename := filename
 	counter := 1
 	for usedFilenames[filename] > 0 {
@@ -110,7 +109,6 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 	hostname := parsedURL.Host
 	path := parsedURL.Path
 
-	// Remove common CDN prefixes and make hostname more readable
 	hostname = strings.ReplaceAll(hostname, "cdn.jsdelivr.net", "jsdelivr")
 	hostname = strings.ReplaceAll(hostname, "cdnjs.cloudflare.com", "cloudflare")
 	hostname = strings.ReplaceAll(hostname, "code.jquery.com", "jquery")
@@ -119,16 +117,13 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 	hostname = strings.ReplaceAll(hostname, "stackpath.bootstrapcdn.com", "bootstrap")
 	hostname = strings.ReplaceAll(hostname, "maxcdn.bootstrapcdn.com", "bootstrap")
 
-	// Clean up the hostname
 	hostname = strings.ReplaceAll(hostname, ".", "-")
 	hostname = strings.ReplaceAll(hostname, "www-", "")
 
-	// Extract meaningful parts from the path
 	pathParts := strings.Split(strings.Trim(path, "/"), "/")
 	var meaningfulParts []string
 
 	for _, part := range pathParts {
-		// Skip version numbers and common meaningless parts
 		if part == "" || part == "dist" || part == "min" ||
 			strings.HasPrefix(part, "v") ||
 			strings.Contains(part, "@") ||
@@ -136,28 +131,22 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 			continue
 		}
 
-		// Keep meaningful parts
 		if len(part) > 0 && !isVersionNumber(part) {
 			meaningfulParts = append(meaningfulParts, part)
 		}
 	}
 
-	// Build the filename
 	var filename string
 	if len(meaningfulParts) > 0 {
-		// Use meaningful parts from path
 		filename = strings.Join(meaningfulParts, "-")
 	} else {
-		// Fallback to hostname
 		filename = hostname
 	}
 
-	// Ensure we have a meaningful name
 	if filename == "" || len(filename) < 2 {
 		filename = "external"
 	}
 
-	// Add resource type prefix for clarity
 	switch resourceType {
 	case "css":
 		filename = "style-" + filename
@@ -165,7 +154,6 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 		filename = "script-" + filename
 	}
 
-	// Ensure we have an extension
 	if !strings.Contains(filename, ".") {
 		filename += getExtension(resourceType)
 	}
@@ -174,19 +162,14 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 }
 
 func isVersionNumber(s string) bool {
-	// Check for common version patterns
 	if strings.HasPrefix(s, "v") && len(s) > 1 {
-		// v1.2.3, v2.0, etc.
 		return true
 	}
 
-	// Check for semantic versioning patterns
 	if strings.Count(s, ".") >= 1 {
-		// 1.2.3, 2.0.0, etc.
 		return true
 	}
 
-	// Check for single digit versions
 	if len(s) == 1 && s >= "0" && s <= "9" {
 		return true
 	}
@@ -206,27 +189,22 @@ func getExtension(resourceType string) string {
 }
 
 func sanitizeFilename(filename string) string {
-	// Replace unsafe characters with underscores
 	unsafeChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", " "}
 
 	for _, char := range unsafeChars {
 		filename = strings.ReplaceAll(filename, char, "_")
 	}
 
-	// Remove multiple consecutive underscores
 	for strings.Contains(filename, "__") {
 		filename = strings.ReplaceAll(filename, "__", "_")
 	}
 
-	// Trim underscores from start and end
 	filename = strings.Trim(filename, "_")
 
-	// Ensure filename is not empty
 	if filename == "" {
 		filename = "resource"
 	}
 
-	// Limit filename length
 	if len(filename) > 100 {
 		ext := filepath.Ext(filename)
 		base := strings.TrimSuffix(filename, ext)

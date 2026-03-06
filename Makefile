@@ -1,42 +1,32 @@
-# HTML Formatter & JSX Converter Makefile
-
 .PHONY: build build-cli build-server run test clean help
 
-# Default target
 all: build
 
-# Build both CLI and server
 build: build-cli build-server
 
-# Build CLI tool
 build-cli:
 	@echo "Building CLI tool..."
 	@go build -o uncluster-split ./cmd/uncluster-split
 	@echo "CLI tool built: uncluster-split"
 
-# Build web server
 build-server:
 	@echo "Building web server..."
 	@go build -o htmlfmt-server main.go
 	@echo "Web server built: htmlfmt-server"
 
-# Run the web server
 run:
 	@echo "Starting web server..."
 	@go run main.go
 
-# Run tests
 test:
 	@echo "Running tests..."
 	@go test ./...
 
-# Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -f htmlfmt htmlfmt-server uncluster-split uncluster-split.exe uncluster-split-macos uncluster-split-linux htmlfmt-server.exe htmlfmt-server-macos htmlfmt-server-linux
 	@echo "Clean complete"
 
-# Cross-platform builds
 build-windows:
 	@echo "Building for Windows..."
 	@GOOS=windows GOARCH=amd64 go build -o uncluster-split.exe ./cmd/uncluster-split
@@ -52,18 +42,15 @@ build-linux:
 	@GOOS=linux GOARCH=amd64 go build -o uncluster-split-linux ./cmd/uncluster-split
 	@GOOS=linux GOARCH=amd64 go build -o htmlfmt-server-linux main.go
 
-# Install dependencies
 deps:
 	@echo "Installing dependencies..."
 	@go mod tidy
 	@go mod download
 
-# Development server with hot reload (requires air)
 dev:
 	@echo "Starting development server with hot reload..."
 	@air
 
-# Help
 help:
 	@echo "HTML Formatter & JSX Converter"
 	@echo ""

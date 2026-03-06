@@ -238,7 +238,6 @@ func (c *JSXConverter) renderTextAsJSX(buf *strings.Builder, n *html.Node) {
 	text := n.Data
 
 	if strings.Contains(text, "<!--") && strings.Contains(text, "-->") {
-		// Convert HTML comments to JSX comments
 		text = convertHTMLCommentsInText(text)
 	}
 
