@@ -183,27 +183,20 @@ func generateEJSViews(htmlContent string) (string, map[string]string, error) {
 }
 
 func collectBodyComponents(root *html.Node) []ejsComponent {
-	primaryNodes := selectComponentNodes(root)
-	if len(primaryNodes) == 0 {
+	nodes := selectComponentNodes(root)
+	if len(nodes) == 0 {
 		return nil
 	}
-
-	nestedNodes := collectNestedComponents(primaryNodes, 6)
-	nodes := append([]*html.Node{}, nestedNodes...)
-	nodes = append(nodes, primaryNodes...)
-	nodes = uniqueNodes(nodes)
 
 	sort.Slice(nodes, func(i, j int) bool {
 		return nodeDepth(nodes[i]) > nodeDepth(nodes[j])
 	})
 
 	var components []ejsComponent
-
 	for _, child := range nodes {
 		if !isComponentCandidate(child) {
 			continue
 		}
-
 		components = append(components, ejsComponent{
 			Name: "",
 			HTML: "",
@@ -330,219 +323,30 @@ func isSectionBoundary(n *html.Node) bool {
 	if isNonContentElement(n) || isEmbedOnlyNode(n) {
 		return false
 	}
+	// 'main' is treated as a transparent container — we recurse through it
+	// to find its section children rather than extracting it as one giant partial.
 	switch n.Data {
-	case "nav", "header", "footer", "section", "main", "aside":
+	case "nav", "header", "footer", "section", "aside":
 		return true
 	}
 
-	classAttr := strings.ToLower(getAttributeValue(n, "class"))
-	idAttr := strings.ToLower(getAttributeValue(n, "id"))
-	combined := classAttr + " " + idAttr
-	if combined == " " {
-		return false
-	}
-
+	// For non-semantic elements, only match if a class or the id is exactly a known keyword.
+	classes := strings.Fields(strings.ToLower(getAttributeValue(n, "class")))
+	id := strings.ToLower(getAttributeValue(n, "id"))
 	keywords := []string{
-		"navbar", "nav", "menu", "header", "footer", "hero", "section", "cta",
-		"pricing", "gallery", "grid", "slider", "carousel", "tabs", "accordion", "form",
+		"navbar", "nav", "header", "footer", "hero", "section",
 	}
 	for _, keyword := range keywords {
-		if strings.Contains(combined, keyword) {
+		if id == keyword {
 			return true
 		}
-	}
-
-	return false
-}
-
-func collectNestedComponents(roots []*html.Node, maxDepth int) []*html.Node {
-	var nested []*html.Node
-	for _, root := range roots {
-		nested = append(nested, collectNestedComponentsInRoot(root, maxDepth)...)
-	}
-	return nested
-}
-
-func collectNestedComponentsInRoot(root *html.Node, maxDepth int) []*html.Node {
-	patternCounts := make(map[string]int)
-
-	var walkCount func(n *html.Node, depth int)
-	walkCount = func(n *html.Node, depth int) {
-		if depth > maxDepth {
-			return
-		}
-		if depth > 0 && isComponentCandidate(n) {
-			if key := componentPatternKey(n); key != "" {
-				patternCounts[key]++
-			}
-		}
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.ElementNode {
-				walkCount(child, depth+1)
+		for _, class := range classes {
+			if class == keyword {
+				return true
 			}
 		}
 	}
 
-	var walkSelect func(n *html.Node, depth int)
-	var selected []*html.Node
-	walkSelect = func(n *html.Node, depth int) {
-		if depth > maxDepth {
-			return
-		}
-		if depth > 0 && isComponentCandidate(n) {
-			key := componentPatternKey(n)
-			if shouldSelectNestedComponent(n, patternCounts[key]) {
-				selected = append(selected, n)
-			}
-		}
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.ElementNode {
-				walkSelect(child, depth+1)
-			}
-		}
-	}
-
-	walkCount(root, 0)
-	walkSelect(root, 0)
-
-	return selected
-}
-
-func shouldSelectNestedComponent(n *html.Node, patternCount int) bool {
-	if isNonContentElement(n) || isEmbedOnlyNode(n) {
-		return false
-	}
-
-	keywordMatch := hasComponentKeyword(n)
-	if isLayoutContainer(n) && !keywordMatch {
-		return false
-	}
-
-	if isButtonElement(n) {
-		return true
-	}
-
-	if keywordMatch && (elementChildCount(n) > 0 || nodeTextLength(n) > 10) {
-		return true
-	}
-
-	if patternCount >= 2 && hasIdentifyingClassOrID(n) && hasMeaningfulContent(n) {
-		return true
-	}
-
-	return false
-}
-
-func hasMeaningfulContent(n *html.Node) bool {
-	return elementChildCount(n) >= 2 || nodeTextLength(n) >= 20
-}
-
-func hasIdentifyingClassOrID(n *html.Node) bool {
-	return getAttributeValue(n, "class") != "" || getAttributeValue(n, "id") != ""
-}
-
-func componentPatternKey(n *html.Node) string {
-	if n.Type != html.ElementNode {
-		return ""
-	}
-	classes := normalizeClassList(strings.Fields(getAttributeValue(n, "class")))
-	if len(classes) == 0 {
-		return n.Data
-	}
-	return n.Data + "." + strings.Join(classes, ".")
-}
-
-func normalizeClassList(classes []string) []string {
-	if len(classes) == 0 {
-		return nil
-	}
-
-	seen := make(map[string]bool, len(classes))
-	filtered := make([]string, 0, len(classes))
-	for _, className := range classes {
-		className = strings.ToLower(strings.TrimSpace(className))
-		if className == "" || isStateClass(className) {
-			continue
-		}
-		if seen[className] {
-			continue
-		}
-		seen[className] = true
-		filtered = append(filtered, className)
-	}
-	sort.Strings(filtered)
-	return filtered
-}
-
-func isStateClass(className string) bool {
-	switch className {
-	case "active", "current", "open", "closed", "selected":
-		return true
-	default:
-	}
-	return strings.HasPrefix(className, "is-") ||
-		strings.HasPrefix(className, "has-") ||
-		strings.HasPrefix(className, "js-") ||
-		strings.HasPrefix(className, "w--")
-}
-
-func hasComponentKeyword(n *html.Node) bool {
-	classAttr := strings.ToLower(getAttributeValue(n, "class"))
-	idAttr := strings.ToLower(getAttributeValue(n, "id"))
-	combined := classAttr + " " + idAttr
-	if strings.TrimSpace(combined) == "" {
-		return false
-	}
-
-	keywords := []string{
-		"navbar", "nav", "menu", "header", "footer", "hero", "section", "cta",
-		"button", "btn", "card", "tile", "banner", "pricing", "gallery", "feature",
-		"testimonial", "form", "input", "field", "dropdown", "modal", "popup",
-		"slider", "carousel", "tabs", "accordion",
-	}
-	for _, keyword := range keywords {
-		if strings.Contains(combined, keyword) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func isButtonElement(n *html.Node) bool {
-	if n.Type != html.ElementNode {
-		return false
-	}
-	if n.Data == "button" {
-		return true
-	}
-	role := strings.ToLower(getAttributeValue(n, "role"))
-	if role == "button" {
-		return true
-	}
-	if n.Data == "a" {
-		classAttr := strings.ToLower(getAttributeValue(n, "class"))
-		if strings.Contains(classAttr, "button") || strings.Contains(classAttr, "btn") {
-			return true
-		}
-	}
-	return false
-}
-
-func isLayoutContainer(n *html.Node) bool {
-	if n.Type != html.ElementNode {
-		return false
-	}
-	classAttr := strings.ToLower(getAttributeValue(n, "class"))
-	idAttr := strings.ToLower(getAttributeValue(n, "id"))
-	wrapperHints := []string{
-		"wrapper", "container", "page", "layout", "root", "app", "site", "content",
-	}
-	for _, hint := range wrapperHints {
-		if strings.Contains(classAttr, hint) || strings.Contains(idAttr, hint) {
-			return true
-		}
-	}
 	return false
 }
 
@@ -596,16 +400,6 @@ func sanitizeComponentName(name string) string {
 
 	s := strings.Trim(b.String(), "-")
 	return s
-}
-
-func elementChildren(n *html.Node) []*html.Node {
-	var children []*html.Node
-	for child := n.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type == html.ElementNode {
-			children = append(children, child)
-		}
-	}
-	return children
 }
 
 func contentChildren(n *html.Node) []*html.Node {
@@ -663,28 +457,6 @@ func isEmbedOnlyNode(n *html.Node) bool {
 	}
 
 	return hasElement
-}
-
-func elementChildCount(n *html.Node) int {
-	return len(elementChildren(n))
-}
-
-func nodeTextLength(n *html.Node) int {
-	length := 0
-	var walk func(*html.Node)
-	walk = func(node *html.Node) {
-		if node.Type == html.TextNode {
-			trimmed := strings.TrimSpace(node.Data)
-			if trimmed != "" {
-				length += len(trimmed)
-			}
-		}
-		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			walk(child)
-		}
-	}
-	walk(n)
-	return length
 }
 
 func nodeDepth(n *html.Node) int {
