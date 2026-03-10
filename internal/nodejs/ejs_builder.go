@@ -167,15 +167,16 @@ func generateEJSViews(htmlContent string) (string, map[string]string, error) {
 		rendered = formatted
 	}
 
-	replacements := buildIncludeReplacements(components)
-	rendered = applyIncludeReplacements(rendered, replacements)
+	indexReplacements := buildIncludeReplacements(components, "partials/")
+	partialReplacements := buildIncludeReplacements(components, "")
+	rendered = applyIncludeReplacements(rendered, indexReplacements)
 
 	partials := make(map[string]string, len(components))
 	for _, component := range components {
 		if _, exists := partials[component.Name]; exists {
 			continue
 		}
-		partials[component.Name] = applyIncludeReplacements(component.HTML, replacements)
+		partials[component.Name] = applyIncludeReplacements(component.HTML, partialReplacements)
 	}
 
 	return rendered, partials, nil
@@ -707,11 +708,11 @@ func uniqueNodes(nodes []*html.Node) []*html.Node {
 	return unique
 }
 
-func buildIncludeReplacements(components []ejsComponent) map[string]string {
+func buildIncludeReplacements(components []ejsComponent, prefix string) map[string]string {
 	replacements := make(map[string]string, len(components))
 	for _, component := range components {
 		placeholder := "<!--EJS_INCLUDE:" + component.Name + "-->"
-		include := "<%- include('partials/" + component.Name + "') %>"
+		include := "<%- include('" + prefix + component.Name + "') %>"
 		replacements[placeholder] = include
 	}
 	return replacements

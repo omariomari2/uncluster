@@ -351,9 +351,11 @@ func handleExportNodeJSEJS(c *fiber.Ctx) error {
 
 	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
 
+	rewrittenHTML := extracted.RewriteForEJS()
+
 	config := &nodejs.EJSProjectConfig{
 		ProjectName: projectName,
-		HTML:        extracted.HTML,
+		HTML:        rewrittenHTML,
 		InlineCSS:   extracted.InlineCSS,
 		InlineJS:    extracted.InlineJS,
 		ExternalCSS: extracted.ExternalCSS,

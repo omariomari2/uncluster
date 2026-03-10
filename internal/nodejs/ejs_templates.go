@@ -8,11 +8,14 @@ const ejsPackageJSONTemplate = `{
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "ejs": "^3.1.9"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
   }
 }`
 
@@ -24,7 +27,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 8080
 
 app.set('view engine', 'ejs')
 app.set('views', path.join(__dirname, 'views'))
@@ -57,7 +60,7 @@ An Express + EJS project generated from HTML.
    npm start
    ` + "```" + `
 
-3. Open your browser to http://localhost:3000
+3. Open your browser to http://localhost:8080
 
 ## Project Structure
 

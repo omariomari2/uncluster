@@ -484,6 +484,36 @@ func (e *ExtractedContent) RewriteForNodeJS() string {
 	return buf.String()
 }
 
+func (e *ExtractedContent) RewriteForEJS() string {
+	doc, err := html.Parse(strings.NewReader(e.HTML))
+	if err != nil {
+		return e.HTML
+	}
+	rewriteLinksForEJS(doc)
+	var buf bytes.Buffer
+	if err := html.Render(&buf, doc); err != nil {
+		return e.HTML
+	}
+	return buf.String()
+}
+
+func rewriteLinksForEJS(n *html.Node) {
+	if n.Type == html.ElementNode {
+		if n.Data == "link" {
+			if href := getAttribute(n, "href"); strings.HasPrefix(href, "inline/") || strings.HasPrefix(href, "external/css/") {
+				updateAttribute(n, "href", "/"+href)
+			}
+		} else if n.Data == "script" {
+			if src := getAttribute(n, "src"); strings.HasPrefix(src, "inline/") || strings.HasPrefix(src, "external/js/") {
+				updateAttribute(n, "src", "/"+src)
+			}
+		}
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		rewriteLinksForEJS(c)
+	}
+}
+
 func rewriteLinksForNodeJS(n *html.Node) {
 	if n.Type == html.ElementNode {
 		if n.Data == "link" {
