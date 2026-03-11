@@ -2,7 +2,6 @@ package nodejs
 
 import (
 	"fmt"
-	"htmlfmt/internal/converter"
 	"htmlfmt/internal/fetcher"
 	"log"
 	"strings"
@@ -103,9 +102,13 @@ func organizeSourceFiles(config *ProjectConfig, files map[string]string) {
 	}
 	files["src/index.html"] = indexHTML
 
-	mainComponent, err := converter.ConvertToJSX(config.HTML, config.CSS, config.JS, config.ExternalCSS, config.ExternalJS)
+	sectionFiles, mainComponent, mainTsx, err := generateTSXViews(
+		config.HTML,
+		config.CSS,
+		config.ExternalCSS,
+	)
 	if err != nil {
-		log.Printf("⚠️ Failed to convert HTML to JSX: %v", err)
+		log.Printf("⚠️ Failed to generate TSX views: %v", err)
 		mainComponent = fmt.Sprintf(`import React from 'react'
 
 function MainComponent() {
@@ -116,12 +119,15 @@ function MainComponent() {
 
 export default MainComponent
 `, config.HTML)
+		mainTsx = mainTsxFallback
+	}
+
+	for filename, content := range sectionFiles {
+		files[filename] = content
 	}
 	files["src/components/MainComponent.tsx"] = mainComponent
-
 	files["src/App.tsx"] = appTsxTemplate
-
-	files["src/main.tsx"] = mainTsxTemplate
+	files["src/main.tsx"] = mainTsx
 
 	if config.CSS != "" {
 		files["src/styles/main.css"] = config.CSS
@@ -136,14 +142,6 @@ export default MainComponent
 	for _, js := range config.ExternalJS {
 		if js.Error == nil && js.Content != "" {
 			files["src/scripts/external/"+js.Filename] = js.Content
-		}
-	}
-
-	components, err := converter.AnalyzeAndConvert(config.HTML)
-	if err == nil {
-		for i, component := range components {
-			filename := fmt.Sprintf("src/components/Component%d.tsx", i+1)
-			files[filename] = component
 		}
 	}
 }

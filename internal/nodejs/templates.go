@@ -51,12 +51,12 @@ export default defineConfig({
     emptyOutDir: true
   },
   server: {
-    port: 3000,
+    port: 8080,
     open: true,
     host: true
   },
   preview: {
-    port: 3000,
+    port: 8080,
     open: true,
     host: true
   }
@@ -70,7 +70,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 8080
 
 app.use(express.static(path.join(__dirname, 'dist')))
 
@@ -269,7 +269,7 @@ A React TypeScript project generated from HTML with Vite build system and Expres
    npm run dev
    ` + "```" + `
 
-3. Open your browser to http://localhost:3000
+3. Open your browser to http://localhost:8080
 
 ## Available Scripts
 
@@ -325,7 +325,7 @@ The project uses Vite for development, which provides:
    npm run serve
    ` + "```" + `
 
-3. The server will run on http://localhost:3000 (or PORT environment variable)
+3. The server will run on http://localhost:8080 (or PORT environment variable)
 
 ## Customization
 
@@ -359,10 +359,9 @@ This project includes the following external resources that were automatically d
 MIT
 `
 
-const mainTsxTemplate = `import React from 'react'
+const mainTsxFallback = `import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import './styles/main.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
