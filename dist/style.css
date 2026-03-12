@@ -27,6 +27,10 @@
   --uploadBg: hsla(0, 0%, 0%, 30%);
   --uploadFg: hsl(0, 0%, 100%);
   --uploadHi: hsla(0, 0%, 0%, 60%);
+  --analyze: hsl(270, 70%, 65%);
+  --analyzeBg: hsla(270, 70%, 65%, 1%);
+  --analyzeFg: hsl(270, 70%, 88%);
+  --analyzeHi: hsla(270, 70%, 75%, 25%);
 }
 
 body {
@@ -355,7 +359,7 @@ nav {
   transition: opacity 0.5s ease, visibility 0.5s ease;
 }
 
-button {
+button:not(.theme-btn) {
   height: 50px;
   width: 160px;
   clip-path: path("M 0 25 C 0 -5, -5 0, 80 0 S 160 -5, 160 25, 165 50 80 50, 0 55, 0 25");
@@ -372,7 +376,42 @@ button {
   align-items: center;
   position: absolute;
   transform: translateY(0px);
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+/* ── theme toggle button ── */
+.theme-btn {
+  all: initial;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 400;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--textDim);
+  transition: color 0.15s, border-color 0.15s;
+  box-sizing: border-box;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.theme-btn:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="light"] .theme-btn {
+  border-color: rgba(0, 0, 0, 0.13);
+}
+
+[data-theme="light"] .theme-btn:hover {
+  border-color: rgba(0, 0, 0, 0.25);
 }
 
 span {
@@ -459,10 +498,25 @@ span {
   background-color: var(--tertiaryHi);
 }
 
+.button.sixth {
+  top: 13%;
+  left: 10%;
+}
+
+.button.sixth > button {
+  background-color: var(--analyzeBg);
+  box-shadow: 0px -3px 15px 0px var(--analyzeHi) inset;
+  color: var(--analyzeFg);
+}
+
+.button.sixth > span {
+  background-color: var(--analyzeHi);
+}
+
 .button.upload {
-  top: 50%;
+  bottom: 8%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 
 .button.upload > button {
@@ -479,7 +533,8 @@ span {
 .button.sec,
 .button.third,
 .button.fourth,
-.button.fifth {
+.button.fifth,
+.button.sixth {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -515,6 +570,68 @@ span {
 
 
 
+
+/* ═══════════════════════════════════════
+   LIGHT MODE
+═══════════════════════════════════════ */
+[data-theme="light"] {
+  --text:        hsl(0, 0%, 8%);
+  --textDim:     hsl(0, 0%, 36%);
+  --background:  hsl(0, 0%, 97%);
+
+  --primary:    hsl(155, 65%, 28%);
+  --primaryBg:  hsla(155, 65%, 28%, 7%);
+  --primaryHi:  hsla(155, 65%, 36%, 16%);
+  --primaryFg:  hsl(155, 65%, 20%);
+
+  --secondary:   hsl(156, 40%, 76%);
+  --secondaryFg: hsl(156, 50%, 20%);
+  --secondaryBg: hsla(156, 40%, 28%, 6%);
+  --secondaryHi: hsla(156, 40%, 36%, 18%);
+
+  --accent:   hsl(155, 55%, 80%);
+  --accentBg: hsla(155, 55%, 38%, 6%);
+  --accentFg: hsl(155, 55%, 18%);
+  --accentHi: hsla(155, 55%, 42%, 16%);
+
+  --tertiary:   hsl(220, 55%, 40%);
+  --tertiaryBg: hsla(220, 55%, 40%, 6%);
+  --tertiaryFg: hsl(220, 55%, 26%);
+  --tertiaryHi: hsla(220, 55%, 48%, 16%);
+
+  --ejs:   hsl(35, 72%, 36%);
+  --ejsBg: hsla(35, 72%, 36%, 6%);
+  --ejsFg: hsl(35, 72%, 22%);
+  --ejsHi: hsla(35, 72%, 42%, 16%);
+
+  --upload:   hsl(0, 0%, 18%);
+  --uploadBg: hsla(0, 0%, 85%, 70%);
+  --uploadFg: hsl(0, 0%, 10%);
+  --uploadHi: hsla(0, 0%, 72%, 50%);
+
+  --analyze:   hsl(270, 48%, 38%);
+  --analyzeBg: hsla(270, 48%, 38%, 6%);
+  --analyzeFg: hsl(270, 48%, 24%);
+  --analyzeHi: hsla(270, 48%, 46%, 16%);
+}
+
+/* nav */
+[data-theme="light"] .dropdown-content {
+  background: rgba(250, 250, 250, 0.97);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  color: var(--text);
+}
+
+[data-theme="light"] .download-field input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* grid: invert the white radial gradient so it shows on light bg */
+[data-theme="light"] .grid-svg {
+  filter: invert(1) opacity(0.25);
+}
 
 @media screen and (max-width: 1000px) {
   .title {

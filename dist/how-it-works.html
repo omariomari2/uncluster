@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How It Works — Uncluster</title>
+  <link rel="stylesheet" href="./style.css">
+  <script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'dark')}catch(e){}</script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"></script>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+
+    const THEME_KEY = 'theme';
+    const sources = new Map();
+
+    function mermaidConfig(theme) {
+      const dark = theme !== 'light';
+      return {
+        startOnLoad: false,
+        theme: dark ? 'dark' : 'default',
+        themeVariables: dark ? {
+          background: '#0f0f0f', primaryColor: '#1a1a1a',
+          primaryTextColor: '#ffffff', lineColor: '#444444',
+          edgeLabelBackground: '#1a1a1a', clusterBkg: '#1a1a1a',
+        } : {
+          background: '#f7f7f7', primaryColor: '#ececec',
+          primaryTextColor: '#111111', lineColor: '#999999',
+          edgeLabelBackground: '#f0f0f0', clusterBkg: '#ececec',
+        },
+      };
+    }
+
+    async function renderMermaid(theme) {
+      mermaid.initialize(mermaidConfig(theme));
+      const nodes = document.querySelectorAll('.mermaid');
+      nodes.forEach(el => {
+        const src = sources.get(el);
+        if (src !== undefined) {
+          el.textContent = src;
+          el.removeAttribute('data-processed');
+        }
+      });
+      await mermaid.run({ nodes: Array.from(nodes) });
+    }
+
+    function updateBtn(theme) {
+      const btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = theme === 'light' ? '☾ Dark' : '☀ Light';
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem(THEME_KEY, theme);
+      updateBtn(theme);
+    }
+
+    window.toggleTheme = async function () {
+      const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = cur === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+      await renderMermaid(next);
+    };
+
+    const initial = localStorage.getItem(THEME_KEY) || 'dark';
+    document.addEventListener('DOMContentLoaded', async () => {
+      document.querySelectorAll('.mermaid').forEach(el => {
+        sources.set(el, el.textContent.trim());
+      });
+      applyTheme(initial);
+      await renderMermaid(initial);
+    });
+  </script>
+  <style>
+    /* ── base overrides ── */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      height: auto;
+      overflow: auto;
+      padding: 0;
+      display: block;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      font-family: 'Manrope', sans-serif;
+    }
+
+    /* ── reset global span bleed from style.css ── */
+    .hiw-page span {
+      width: auto;
+      height: auto;
+      background-color: transparent;
+      border-radius: 0;
+      filter: none;
+      position: static;
+      bottom: auto;
+      transition: none;
+      display: inline;
+    }
+
+    /* ── top nav ── */
+    .hiw-nav {
+      position: sticky;
+      top: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 0 5%;
+      height: 54px;
+      background: rgba(15, 15, 15, 0.88);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.85rem;
+    }
+
+    .hiw-nav .brand {
+      font-weight: 700;
+      color: #fff;
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+
+    .hiw-nav .sep { color: rgba(255,255,255,0.2); }
+
+    .hiw-nav .page-label {
+      color: rgba(255,255,255,0.45);
+      font-size: 0.8rem;
+    }
+
+    .hiw-nav .back {
+      margin-left: auto;
+      color: rgba(255,255,255,0.4);
+      text-decoration: none;
+      font-size: 0.8rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: color 0.15s;
+    }
+    .hiw-nav .back:hover { color: var(--primary); }
+
+    /* ── hero ── */
+    .hiw-hero {
+      padding: 6rem 5% 4rem;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .hiw-hero .eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--primary);
+      margin-bottom: 1rem;
+    }
+
+    .hiw-hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      color: #fff;
+      margin: 0 0 1.25rem 0;
+    }
+
+    .hiw-hero .lead {
+      font-size: 1.05rem;
+      color: rgba(255,255,255,0.5);
+      line-height: 1.75;
+      max-width: 620px;
+      margin: 0;
+    }
+
+    /* ── section layout ── */
+    .hiw-section {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 5% 5rem;
+    }
+
+    .hiw-section + .hiw-section {
+      border-top: 1px solid rgba(255,255,255,0.05);
+      padding-top: 5rem;
+    }
+
+    .section-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: rgba(255,255,255,0.3);
+      margin-bottom: 0.6rem;
+    }
+
+    .section-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: #fff;
+      margin: 0 0 0.75rem 0;
+    }
+
+    .section-desc {
+      font-size: 0.92rem;
+      color: rgba(255,255,255,0.45);
+      line-height: 1.75;
+      max-width: 600px;
+      margin: 0 0 2.5rem 0;
+    }
+
+    /* ── feature cards ── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .feature-card {
+      background: #0f0f0f;
+      padding: 1.75rem;
+      transition: background 0.15s;
+    }
+
+    .feature-card:hover { background: #141414; }
+
+    .feature-card .fc-method {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+      font-family: monospace;
+    }
+
+    .fc-method.post {
+      background: rgba(77,255,160,0.1);
+      color: var(--primary);
+      border: 1px solid rgba(77,255,160,0.2);
+    }
+
+    .fc-method.get {
+      background: rgba(100,140,255,0.1);
+      color: hsl(220,70%,75%);
+      border: 1px solid rgba(100,140,255,0.2);
+    }
+
+    .feature-card .fc-path {
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.35);
+      margin-bottom: 0.75rem;
+      display: block;
+    }
+
+    .feature-card .fc-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      margin: 0 0 0.5rem 0;
+    }
+
+    .feature-card .fc-desc {
+      font-size: 0.83rem;
+      color: rgba(255,255,255,0.42);
+      line-height: 1.65;
+      margin: 0;
+    }
+
+    .feature-card .fc-out {
+      margin-top: 1rem;
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.28);
+      font-family: monospace;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 0.75rem;
+    }
+
+    /* ── pipeline steps ── */
+    .pipeline {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .pipeline-step {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 0 2rem;
+      padding: 2rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .pipeline-step:last-child { border-bottom: none; }
+
+    .step-num {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--primary);
+      background: rgba(77,255,160,0.08);
+      border: 1px solid rgba(77,255,160,0.18);
+      border-radius: 10px;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+      font-family: monospace;
+    }
+
+    .step-body {}
+
+    .step-body h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      margin: 0.45rem 0 0.6rem 0;
+      letter-spacing: -0.02em;
+    }
+
+    .step-body p {
+      font-size: 0.88rem;
+      color: rgba(255,255,255,0.45);
+      line-height: 1.75;
+      margin: 0 0 1rem 0;
+    }
+
+    /* ── io example ── */
+    .io-example {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 0.75rem;
+      font-family: monospace;
+      font-size: 0.78rem;
+    }
+
+    .io-panel {
+      background: #0d0d0d;
+      padding: 1rem 1.1rem;
+    }
+
+    .io-panel .io-label {
+      font-size: 0.63rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.6rem;
+      display: block;
+      font-family: 'Manrope', sans-serif;
+    }
+
+    .io-panel.input .io-label  { color: rgba(255,255,255,0.3); }
+    .io-panel.output .io-label { color: var(--primary); }
+
+    .io-panel pre {
+      margin: 0;
+      color: rgba(255,255,255,0.55);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+
+    .io-panel.output pre { color: rgba(77,255,160,0.8); }
+
+    /* ── diagram wrap ── */
+    .diagram-wrap {
+      background: rgba(255,255,255,0.018);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-top: 1.5rem;
+      overflow-x: auto;
+    }
+
+    .diagram-caption {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.25);
+      margin-bottom: 1rem;
+      font-family: monospace;
+    }
+
+    /* ── callout ── */
+    .callout {
+      border-left: 2px solid var(--primary);
+      background: rgba(77,255,160,0.04);
+      border-radius: 0 8px 8px 0;
+      padding: 0.85rem 1.2rem;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.5);
+      line-height: 1.65;
+    }
+
+    .callout.blue {
+      border-left-color: hsl(220,70%,60%);
+      background: rgba(100,140,255,0.04);
+    }
+
+    .callout.orange {
+      border-left-color: var(--ejs);
+      background: rgba(255,180,50,0.04);
+    }
+
+    .callout strong { color: #fff; }
+
+    /* ── inline code ── */
+    code {
+      font-family: monospace;
+      font-size: 0.84em;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 4px;
+      padding: 0.1em 0.4em;
+      color: hsl(155,100%,78%);
+    }
+
+    /* ── stack pill list ── */
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 1rem 0 0;
+    }
+
+    .pill {
+      font-size: 0.75rem;
+      font-family: monospace;
+      padding: 0.3rem 0.75rem;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      color: rgba(255,255,255,0.5);
+      background: rgba(255,255,255,0.03);
+    }
+
+    /* ── dir tree ── */
+    .dir-tree {
+      font-family: monospace;
+      font-size: 0.8rem;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      color: rgba(255,255,255,0.4);
+      line-height: 2;
+      overflow-x: auto;
+    }
+
+    .dt-dir  { color: var(--primary); }
+    .dt-file { color: rgba(255,255,255,0.75); }
+    .dt-note { color: rgba(255,255,255,0.22); font-style: italic; }
+
+    /* ── api table ── */
+    .api-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+      margin-top: 1.5rem;
+    }
+
+    .api-table th {
+      text-align: left;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.25);
+      font-weight: 700;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .api-table td {
+      padding: 0.65rem 0.75rem;
+      color: rgba(255,255,255,0.45);
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      vertical-align: top;
+    }
+
+    .api-table td:first-child {
+      font-family: monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.65rem 0.5rem;
+    }
+
+    .api-table td.m-post { color: var(--primary); }
+    .api-table td.m-get  { color: hsl(220,70%,70%); }
+
+    .api-table td code { background: rgba(255,255,255,0.05); }
+
+    .api-table tr:last-child td { border-bottom: none; }
+
+    /* ── footer spacer ── */
+    .hiw-footer {
+      padding: 4rem 5%;
+      max-width: 960px;
+      margin: 0 auto;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.25);
+    }
+
+    .hiw-footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    /* ══════════════════════════════
+       LIGHT MODE overrides
+    ══════════════════════════════ */
+    [data-theme="light"] body           { background: #f7f7f7; color: #1a1a1a; }
+    [data-theme="light"] .hiw-nav       { background: rgba(247,247,247,0.92); border-bottom-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .hiw-nav .brand      { color: #0d0d0d; }
+    [data-theme="light"] .hiw-nav .sep        { color: rgba(0,0,0,0.2); }
+    [data-theme="light"] .hiw-nav .page-label { color: rgba(0,0,0,0.45); }
+    [data-theme="light"] .hiw-nav .back       { color: rgba(0,0,0,0.4); }
+
+    [data-theme="light"] .hiw-hero h1  { color: #0d0d0d; }
+    [data-theme="light"] .hiw-hero .lead { color: rgba(0,0,0,0.55); }
+
+    [data-theme="light"] .section-label { color: rgba(0,0,0,0.35); }
+    [data-theme="light"] .section-title { color: #0d0d0d; }
+    [data-theme="light"] .section-desc  { color: rgba(0,0,0,0.52); }
+
+    [data-theme="light"] .hiw-section + .hiw-section { border-top-color: rgba(0,0,0,0.08); }
+
+    [data-theme="light"] .feature-grid { background: rgba(0,0,0,0.07); border-color: rgba(0,0,0,0.09); }
+    [data-theme="light"] .feature-card { background: #fff; }
+    [data-theme="light"] .feature-card:hover { background: #f5f5f5; }
+    [data-theme="light"] .feature-card .fc-path  { color: rgba(0,0,0,0.38); }
+    [data-theme="light"] .feature-card .fc-title { color: #0d0d0d; }
+    [data-theme="light"] .feature-card .fc-desc  { color: rgba(0,0,0,0.52); }
+    [data-theme="light"] .feature-card .fc-out   { color: rgba(0,0,0,0.35); border-top-color: rgba(0,0,0,0.08); }
+
+    [data-theme="light"] .pipeline-step { border-bottom-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .step-body h3  { color: #0d0d0d; }
+    [data-theme="light"] .step-body p   { color: rgba(0,0,0,0.52); }
+
+    [data-theme="light"] .io-example    { background: rgba(0,0,0,0.07); border-color: rgba(0,0,0,0.09); }
+    [data-theme="light"] .io-panel      { background: #f0f0f0; }
+    [data-theme="light"] .io-panel pre  { color: rgba(0,0,0,0.6); }
+    [data-theme="light"] .io-panel.output pre { color: hsl(155, 65%, 24%); }
+
+    [data-theme="light"] .diagram-wrap    { background: rgba(0,0,0,0.025); border-color: rgba(0,0,0,0.09); }
+    [data-theme="light"] .diagram-caption { color: rgba(0,0,0,0.35); }
+
+    [data-theme="light"] .callout      { background: rgba(40,160,100,0.07); color: rgba(0,0,0,0.6); }
+    [data-theme="light"] .callout.blue { background: rgba(60,100,220,0.06); border-left-color: hsl(220,55%,40%); }
+    [data-theme="light"] .callout.orange { background: rgba(180,100,20,0.06); border-left-color: hsl(35,72%,36%); }
+    [data-theme="light"] .callout strong { color: #0d0d0d; }
+
+    [data-theme="light"] code { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.1); color: hsl(155,65%,24%); }
+
+    [data-theme="light"] .pill      { border-color: rgba(0,0,0,0.1); color: rgba(0,0,0,0.5); background: rgba(0,0,0,0.04); }
+
+    [data-theme="light"] .dir-tree  { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.09); color: rgba(0,0,0,0.5); }
+    [data-theme="light"] .dt-file   { color: rgba(0,0,0,0.78); }
+    [data-theme="light"] .dt-note   { color: rgba(0,0,0,0.32); }
+
+    [data-theme="light"] .api-table th { color: rgba(0,0,0,0.42); border-bottom-color: rgba(0,0,0,0.09); }
+    [data-theme="light"] .api-table td { color: rgba(0,0,0,0.58); border-bottom-color: rgba(0,0,0,0.06); }
+    [data-theme="light"] .api-table td.m-post { color: hsl(155,65%,24%); }
+    [data-theme="light"] .api-table td.m-get  { color: hsl(220,55%,38%); }
+    [data-theme="light"] .api-table td code   { background: rgba(0,0,0,0.04); }
+
+    [data-theme="light"] .hiw-footer { border-top-color: rgba(0,0,0,0.08); color: rgba(0,0,0,0.35); }
+
+    /* ── responsive ── */
+    @media (max-width: 720px) {
+      .io-example { grid-template-columns: 1fr; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .pipeline-step { grid-template-columns: 1fr; gap: 0.75rem; }
+      .hiw-hero { padding: 3rem 5% 2.5rem; }
+    }
+  </style>
+</head>
+
+<body class="hiw-page">
+
+  <nav class="hiw-nav">
+    <a href="/" class="brand">Uncluster</a>
+    <span class="sep">/</span>
+    <span class="page-label">How It Works</span>
+    <button class="theme-btn" id="theme-toggle" onclick="toggleTheme()" style="margin-left:auto;">☀ Light</button>
+    <a href="/" class="back" style="margin-left:0;">← Back to tool</a>
+  </nav>
+
+  <!-- ── Hero ── -->
+  <div class="hiw-hero">
+    <p class="eyebrow">Technical Overview</p>
+    <h1>From a single HTML file<br>to a full project.</h1>
+    <p class="lead">
+      Paste or upload any HTML file. Uncluster parses it, understands its structure,
+      and converts it into whatever you need — clean JSX, a full TypeScript project,
+      an EJS server setup, or just extracted and separated assets. No configuration.
+      No local tooling required.
+    </p>
+  </div>
+
+  <!-- ── What You Can Do ── -->
+  <section class="hiw-section">
+    <p class="section-label">Features</p>
+    <h2 class="section-title">Six things it does with your HTML</h2>
+    <p class="section-desc">
+      Every feature runs on the same server endpoint model — send HTML in, get a transformed result back.
+    </p>
+
+    <div class="feature-grid">
+
+      <div class="feature-card">
+        <span class="fc-method post">POST</span>
+        <span class="fc-path">/api/format</span>
+        <h3 class="fc-title">Format HTML</h3>
+        <p class="fc-desc">
+          Takes messy, minified, or inconsistently indented HTML and outputs it with
+          clean, normalized indentation. Tags are properly nested, whitespace is trimmed,
+          and the structure becomes easy to read at a glance.
+        </p>
+        <p class="fc-out">→ returns formatted HTML string</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="fc-method post">POST</span>
+        <span class="fc-path">/api/convert</span>
+        <h3 class="fc-title">Convert to JSX</h3>
+        <p class="fc-desc">
+          Rewrites the HTML as a valid React JSX component. Attribute names are translated
+          (<code>class→className</code>, <code>for→htmlFor</code>, all event handlers),
+          inline styles are converted to JS objects, void elements are self-closed,
+          and structural wrapper tags are stripped out.
+        </p>
+        <p class="fc-out">→ returns ready-to-paste .jsx / .tsx component</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="fc-method post">POST</span>
+        <span class="fc-path">/api/analyze</span>
+        <h3 class="fc-title">Analyze Components</h3>
+        <p class="fc-desc">
+          Scans the DOM for elements that repeat with the same structure and class names.
+          Patterns that appear three or more times and match known UI identifiers
+          (card, button, badge, modal, etc.) are surfaced as component suggestions,
+          each with a generated prop list and starter JSX body.
+        </p>
+        <p class="fc-out">→ returns JSON array of component suggestions</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="fc-method post">POST</span>
+        <span class="fc-path">/api/export</span>
+        <h3 class="fc-title">Export ZIP</h3>
+        <p class="fc-desc">
+          Pulls all inline <code>&lt;style&gt;</code> and <code>&lt;script&gt;</code> blocks
+          out of the HTML into separate files, then downloads any external CDN stylesheets
+          and scripts referenced via <code>&lt;link&gt;</code> and <code>&lt;script src&gt;</code>
+          tags. The HTML is rewritten to reference these local files, then everything is
+          bundled into a ZIP.
+        </p>
+        <p class="fc-out">→ returns .zip with separated HTML, CSS, JS files</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="fc-method post">POST</span>
+        <span class="fc-path">/api/export-nodejs</span>
+        <h3 class="fc-title">Export TSX Project</h3>
+        <p class="fc-desc">
+          Scaffolds a complete, runnable Express + Vite + TypeScript project around your HTML.
+          Generates <code>package.json</code>, <code>vite.config.js</code>, <code>tsconfig.json</code>,
+          ESLint and Prettier configs, a <code>server.js</code>, and a structured <code>src/</code>
+          directory with your converted component inside it.
+        </p>
+        <p class="fc-out">→ returns .zip, unzip and run npm install</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="fc-method post">POST</span>
+        <span class="fc-path">/api/export-nodejs-ejs</span>
+        <h3 class="fc-title">Export EJS Project</h3>
+        <p class="fc-desc">
+          Scaffolds an Express + EJS server-rendered project. Your HTML is split into EJS
+          partials — one for the header, one for the footer, and one per major content block.
+          Each partial is wired up to an Express route that calls <code>res.render()</code>.
+          No client-side framework needed.
+        </p>
+        <p class="fc-out">→ returns .zip ready for server-side rendering</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── The Pipeline ── -->
+  <section class="hiw-section">
+    <p class="section-label">The Pipeline</p>
+    <h2 class="section-title">What happens under the hood</h2>
+    <p class="section-desc">
+      Every request runs through the same five-stage pipeline. The stages are the same regardless
+      of which feature you use — only the final output stage changes.
+    </p>
+
+    <div class="pipeline">
+
+      <!-- Step 1 -->
+      <div class="pipeline-step">
+        <div class="step-num">01</div>
+        <div class="step-body">
+          <h3>Parse the HTML into a tree</h3>
+          <p>
+            The raw HTML string is fed into Go's <code>html.Parse()</code>. This produces a
+            linked node tree — not an array, not a flat list. Each node has a type (element,
+            text, comment), a tag name, a list of attributes, and pointers to its first child
+            and next sibling. Every subsequent stage reads this tree; nothing works directly
+            on the raw string.
+          </p>
+          <div class="io-example">
+            <div class="io-panel input">
+              <span class="io-label">Input</span>
+              <pre>&lt;div class="card"&gt;
+  &lt;h2&gt;Title&lt;/h2&gt;
+  &lt;p&gt;Body text here&lt;/p&gt;
+&lt;/div&gt;</pre>
+            </div>
+            <div class="io-panel output">
+              <span class="io-label">Parsed tree</span>
+              <pre>Element: div
+  attr: class="card"
+  └─ Element: h2
+       └─ Text: "Title"
+  └─ Element: p
+       └─ Text: "Body text here"</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="pipeline-step">
+        <div class="step-num">02</div>
+        <div class="step-body">
+          <h3>Walk every node depth-first</h3>
+          <p>
+            Every stage visits the tree the same way: go to <code>FirstChild</code>,
+            do the work, then move to <code>NextSibling</code>, recurse. This depth-first
+            walk visits every node in the document exactly once. The converter uses this
+            walk to build JSX. The analyzer uses it to count repeating patterns.
+            The formatter uses it to track indent depth.
+          </p>
+          <div class="diagram-wrap">
+            <p class="diagram-caption">Diagram — depth-first traversal order</p>
+            <pre class="mermaid">
+graph LR
+    A["html.Parse()"] --> B["DOM root"]
+    B --> C["visit FirstChild"]
+    C --> D{"has children?"}
+    D -->|yes| E["recurse into children"]
+    D -->|no| F["move to NextSibling"]
+    E --> F
+    F --> G{"sibling exists?"}
+    G -->|yes| C
+    G -->|no| H["return up"]
+
+    style A fill:#1565c0,color:#ffffff,stroke:#0d47a1
+    style B fill:#1b5e20,color:#ffffff,stroke:#1b5e20
+    style E fill:#e65100,color:#ffffff,stroke:#bf360c
+            </pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="pipeline-step">
+        <div class="step-num">03</div>
+        <div class="step-body">
+          <h3>Translate attributes (JSX path)</h3>
+          <p>
+            For JSX conversion, each element's attributes are run through a lookup table of
+            70+ entries. <code>class</code> becomes <code>className</code>.
+            <code>for</code> becomes <code>htmlFor</code>. Every <code>onclick</code>-style
+            handler becomes <code>onClick</code>. Inline <code>style="color:red"</code>
+            strings become <code>style=&#123;&#123; color: 'red' &#125;&#125;</code> objects.
+            Elements like <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>, and
+            <code>&lt;body&gt;</code> are skipped entirely — they don't belong in a React component.
+          </p>
+          <div class="io-example">
+            <div class="io-panel input">
+              <span class="io-label">HTML</span>
+              <pre>&lt;label for="email"
+  class="field"
+  onclick="go()"
+  style="color:red"&gt;
+  Email
+&lt;/label&gt;</pre>
+            </div>
+            <div class="io-panel output">
+              <span class="io-label">JSX</span>
+              <pre>&lt;label htmlFor="email"
+  className="field"
+  onClick={go}
+  style={{ color: 'red' }}&gt;
+  Email
+&lt;/label&gt;</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="pipeline-step">
+        <div class="step-num">04</div>
+        <div class="step-body">
+          <h3>Detect repeating patterns (Analyze path)</h3>
+          <p>
+            For component analysis, each element visited during the walk is fingerprinted by
+            its tag name, CSS classes, and id — for example <code>div.card#featured</code>.
+            Elements that share the same fingerprint are grouped and counted. Any pattern that
+            appears three or more times <em>and</em> whose name matches a known UI keyword
+            (card, button, badge, modal, dialog, avatar, toast, alert...) is flagged as a
+            component candidate. Generic structural tags like <code>div</code> and
+            <code>section</code> are excluded even if they repeat.
+          </p>
+          <div class="callout blue">
+            <strong>Why the frequency threshold?</strong> A one-off element doesn't justify
+            a component. Three or more occurrences is the signal that the developer already
+            intended repetition — the component just hasn't been extracted yet.
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="pipeline-step">
+        <div class="step-num">05</div>
+        <div class="step-body">
+          <h3>Assemble and return the output</h3>
+          <p>
+            All string output is built with <code>strings.Builder</code> — append-only,
+            no string concatenation, no intermediate copies. For JSX: imports at the top,
+            the component function body in the middle, any extracted script logic at the bottom.
+            For exports: the ZIP is assembled in memory using Go's <code>archive/zip</code>
+            and streamed directly back in the HTTP response.
+          </p>
+          <div class="callout">
+            <strong>No temp files.</strong> Nothing is written to disk. Every operation runs
+            entirely in memory and the result is returned directly in the HTTP response.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Resource Extractor ── -->
+  <section class="hiw-section">
+    <p class="section-label">Internals</p>
+    <h2 class="section-title">How asset extraction works</h2>
+    <p class="section-desc">
+      The Export ZIP and project scaffold features need to separate your HTML from its styles and scripts.
+      Here's what the extractor actually does.
+    </p>
+
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">A</div>
+        <div class="step-body">
+          <h3>Inline styles and scripts → separate files</h3>
+          <p>
+            Every <code>&lt;style&gt;</code> block in the document is lifted out and written to
+            its own numbered CSS file (<code>style-0.css</code>, <code>style-1.css</code>, ...).
+            Every <code>&lt;script&gt;</code> block without a <code>src</code> attribute is
+            lifted into a separate JS file. The original tags are then removed from the HTML.
+          </p>
+        </div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">B</div>
+        <div class="step-body">
+          <h3>External CDN links → downloaded locally</h3>
+          <p>
+            Any <code>&lt;link rel="stylesheet"&gt;</code> or <code>&lt;script src="..."&gt;</code>
+            pointing to an external URL is fetched over HTTP and saved locally. CDN hostnames
+            are replaced with short aliases in the filename, unsafe characters are stripped,
+            and names are truncated to stay filesystem-safe. The HTML's <code>href</code> and
+            <code>src</code> attributes are rewritten to point to the local file.
+          </p>
+          <div class="callout orange">
+            <strong>Example:</strong> A link to Bootstrap from
+            <code>cdn.jsdelivr.net/npm/bootstrap@5/dist/css/bootstrap.min.css</code>
+            becomes <code>jsdelivr-bootstrap-min.css</code> in the ZIP.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Project Scaffolder ── -->
+  <section class="hiw-section">
+    <p class="section-label">Project Generation</p>
+    <h2 class="section-title">How a full project gets built from HTML</h2>
+    <p class="section-desc">
+      The scaffold exporters don't just rename files. They generate a complete project
+      that you can unzip, run <code>npm install</code>, and start developing in immediately.
+    </p>
+
+    <div class="pipeline">
+
+      <div class="pipeline-step">
+        <div class="step-num">TSX</div>
+        <div class="step-body">
+          <h3>Express + Vite + TypeScript</h3>
+          <p>
+            Your HTML is converted to JSX and placed in <code>src/App.tsx</code>. The scaffolder
+            generates all the boilerplate around it using Go's <code>text/template</code> engine —
+            inserting your project name, dependency versions, and converted component at the right
+            places. The output is a ready-to-run SPA with hot module replacement via Vite and an
+            Express server for API routes.
+          </p>
+          <div class="callout">
+            Generated files include: <code>package.json</code> · <code>vite.config.js</code> ·
+            <code>server.js</code> · <code>tsconfig.json</code> · <code>.eslintrc.json</code> ·
+            <code>.prettierrc</code> · <code>.gitignore</code> · <code>src/</code> with your component
+          </div>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-num">EJS</div>
+        <div class="step-body">
+          <h3>Express + EJS server rendering</h3>
+          <p>
+            The HTML is parsed a second time and split into named EJS partial files — one for the
+            header, one for the footer, and one for each major content section found in the body.
+            Each partial is placed in <code>views/partials/</code> and included from a root
+            <code>views/index.ejs</code>. Express route handlers call <code>res.render()</code> on
+            each view. No client-side framework is involved — pages are rendered server-side on
+            every request.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Project Structure ── -->
+  <section class="hiw-section">
+    <p class="section-label">Codebase</p>
+    <h2 class="section-title">Project structure</h2>
+    <p class="section-desc">
+      Each internal package owns exactly one concern. No package imports another — they communicate
+      only through function arguments and return values.
+    </p>
+
+    <div class="dir-tree">
+      <span class="dt-dir">uncluster/</span><br>
+      ├── <span class="dt-file">main.go</span>                   <span class="dt-note">// Fiber server, routes, middleware</span><br>
+      ├── <span class="dt-dir">cmd/uncluster-split/</span><br>
+      │   └── <span class="dt-file">main.go</span>               <span class="dt-note">// CLI: run extraction without the server</span><br>
+      └── <span class="dt-dir">internal/</span><br>
+          ├── <span class="dt-dir">analyzer/</span>               <span class="dt-note">// pattern counting, component suggestions</span><br>
+          ├── <span class="dt-dir">converter/</span>              <span class="dt-note">// HTML → JSX, 70+ attribute translations</span><br>
+          ├── <span class="dt-dir">extractor/</span>              <span class="dt-note">// splits inline CSS/JS, rewrites links</span><br>
+          ├── <span class="dt-dir">fetcher/</span>                <span class="dt-note">// downloads external CDN assets over HTTP</span><br>
+          ├── <span class="dt-dir">formatter/</span>              <span class="dt-note">// recursive indentation and normalization</span><br>
+          ├── <span class="dt-dir">nodejs/</span>                 <span class="dt-note">// TSX + EJS project scaffolding, zip output</span><br>
+          └── <span class="dt-dir">zipper/</span>                 <span class="dt-note">// generic ZIP creation for extracted assets</span>
+    </div>
+
+    <div class="pill-list">
+      <span class="pill">Go 1.21</span>
+      <span class="pill">Fiber v2</span>
+      <span class="pill">golang.org/x/net/html</span>
+      <span class="pill">text/template</span>
+      <span class="pill">archive/zip</span>
+    </div>
+  </section>
+
+  <!-- ── API Reference ── -->
+  <section class="hiw-section">
+    <p class="section-label">API Reference</p>
+    <h2 class="section-title">Endpoints</h2>
+    <p class="section-desc">
+      All endpoints accept JSON with an <code>html</code> field. Export endpoints return a binary
+      ZIP. The server includes CORS, request logging, and panic recovery middleware.
+    </p>
+
+    <table class="api-table">
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Path</th>
+          <th>Request</th>
+          <th>Response</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/format</code></td>
+          <td><code>{ html: string }</code></td>
+          <td>Formatted HTML string</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/convert</code></td>
+          <td><code>{ html: string }</code></td>
+          <td>JSX component string</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/analyze</code></td>
+          <td><code>{ html: string }</code></td>
+          <td>JSON array of component suggestions</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/export</code></td>
+          <td><code>{ html: string }</code></td>
+          <td>ZIP — separated HTML, CSS, JS</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/export-nodejs</code></td>
+          <td><code>{ html: string }</code></td>
+          <td>ZIP — full Express + Vite + TS project</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/export-nodejs-ejs</code></td>
+          <td><code>{ html: string }</code></td>
+          <td>ZIP — full Express + EJS project</td>
+        </tr>
+        <tr>
+          <td class="m-get">GET</td>
+          <td><code>/api/health</code></td>
+          <td>—</td>
+          <td><code>{ status, service, version }</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout blue" style="margin-top: 1.5rem;">
+      <strong>CLI alternative:</strong> The <code>cmd/uncluster-split</code> binary runs the full
+      extraction pipeline locally without starting the HTTP server.
+      <code>go run ./cmd/uncluster-split -input file.html -output ./out</code>.
+      Pass <code>-manifest true</code> to also write a <code>split-manifest.json</code>
+      listing every output file produced.
+    </div>
+  </section>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      gsap.registerPlugin(ScrollTrigger);
+
+      // ── hero entrance ─────────────────────────────────
+      gsap.from('.hiw-hero .eyebrow, .hiw-hero h1, .hiw-hero .lead', {
+        y: 32,
+        opacity: 0,
+        duration: 0.85,
+        stagger: 0.15,
+        ease: 'power3.out',
+        delay: 0.15,
+      });
+
+      // ── section label + title ─────────────────────────
+      gsap.utils.toArray('.section-label, .section-title, .section-desc').forEach(el => {
+        gsap.from(el, {
+          scrollTrigger: { trigger: el, start: 'top 88%' },
+          y: 20,
+          opacity: 0,
+          duration: 0.65,
+          ease: 'power3.out',
+        });
+      });
+
+      // ── feature cards stagger ─────────────────────────
+      gsap.from('.feature-card', {
+        scrollTrigger: { trigger: '.feature-grid', start: 'top 80%' },
+        y: 28,
+        opacity: 0,
+        duration: 0.55,
+        stagger: 0.07,
+        ease: 'power3.out',
+      });
+
+      // ── pipeline steps slide in ───────────────────────
+      gsap.utils.toArray('.pipeline-step').forEach(step => {
+        gsap.from(step, {
+          scrollTrigger: { trigger: step, start: 'top 88%' },
+          x: -28,
+          opacity: 0,
+          duration: 0.6,
+          ease: 'power3.out',
+        });
+      });
+
+      // ── io examples ──────────────────────────────────
+      gsap.utils.toArray('.io-example').forEach(el => {
+        gsap.from(el, {
+          scrollTrigger: { trigger: el, start: 'top 88%' },
+          y: 18,
+          opacity: 0,
+          duration: 0.55,
+          ease: 'power2.out',
+        });
+      });
+
+      // ── callouts, diagrams, dir-tree ─────────────────
+      gsap.utils.toArray('.callout, .diagram-wrap, .dir-tree, .pill-list').forEach(el => {
+        gsap.from(el, {
+          scrollTrigger: { trigger: el, start: 'top 90%' },
+          y: 14,
+          opacity: 0,
+          duration: 0.5,
+          ease: 'power2.out',
+        });
+      });
+
+      // ── api table rows ────────────────────────────────
+      gsap.from('.api-table', {
+        scrollTrigger: { trigger: '.api-table', start: 'top 85%' },
+        y: 20,
+        opacity: 0,
+        duration: 0.6,
+        ease: 'power3.out',
+      });
+    });
+  </script>
+
+  <footer class="hiw-footer">
+    <span>Uncluster — built in Go</span>
+    <a href="https://github.com/omariomari2/uncluster.git" target="_blank">Source on GitHub →</a>
+  </footer>
+
+</body>
+</html>
