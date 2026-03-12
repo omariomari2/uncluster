@@ -3,8 +3,6 @@ package analyzer
 import (
 	"encoding/json"
 	"fmt"
-	"htmlfmt/internal/ai"
-	"log"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -20,17 +18,6 @@ type ComponentSuggestion struct {
 	JSXCode     string            `json:"jsxCode"`
 }
 
-type AIClient interface {
-	AnalyzeHTMLForComponents(htmlContent string, elementInfo string) (*ai.ComponentAnalysisResult, error)
-	IsEnabled() bool
-}
-
-var globalAIClient AIClient
-
-func SetAIClient(client AIClient) {
-	globalAIClient = client
-}
-
 func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
 	doc, err := html.Parse(strings.NewReader(htmlInput))
 	if err != nil {
@@ -40,17 +27,7 @@ func AnalyzeComponents(htmlInput string) ([]ComponentSuggestion, error) {
 	elementPatterns := make(map[string]*ElementPattern)
 	collectPatterns(doc, elementPatterns)
 
-	suggestions := generateSuggestions(elementPatterns)
-
-	if globalAIClient != nil && globalAIClient.IsEnabled() {
-		enhancedSuggestions, err := enhanceWithAI(htmlInput, suggestions, elementPatterns)
-		if err != nil {
-			return suggestions, nil
-		}
-		return enhancedSuggestions, nil
-	}
-
-	return suggestions, nil
+	return generateSuggestionsWithoutAI(elementPatterns), nil
 }
 
 type ElementPattern struct {
@@ -172,61 +149,6 @@ func kebabToCamel(s string) string {
 		}
 	}
 	return result
-}
-
-func generateSuggestions(patterns map[string]*ElementPattern) []ComponentSuggestion {
-	if globalAIClient == nil || !globalAIClient.IsEnabled() {
-		log.Printf("AI not configured - using strict fallback (obvious components only)")
-		return generateSuggestionsWithoutAI(patterns)
-	}
-
-	return generateAllCandidates(patterns)
-}
-
-func generateAllCandidates(patterns map[string]*ElementPattern) []ComponentSuggestion {
-	var suggestions []ComponentSuggestion
-
-	structuralElements := map[string]bool{
-		"html": true, "head": true, "body": true, "title": true,
-		"meta": true, "link": true, "script": true, "style": true,
-		"base": true, "noscript": true,
-	}
-
-	for patternKey, pattern := range patterns {
-		if structuralElements[pattern.TagName] {
-			continue
-		}
-
-		if pattern.Count < 2 && len(pattern.Children) < 2 {
-			continue
-		}
-
-		suggestion := ComponentSuggestion{
-			Name:        generateComponentName(pattern.TagName, patternKey),
-			Description: generateDescription(pattern),
-			TagName:     pattern.TagName,
-			Attributes:  make(map[string]string),
-			Children:    make([]string, 0),
-			Count:       pattern.Count,
-			JSXCode:     generateJSXCode(pattern),
-		}
-
-		for attr, count := range pattern.Attributes {
-			if count >= pattern.Count/2 {
-				suggestion.Attributes[attr] = "{string}"
-			}
-		}
-
-		for childTag, count := range pattern.Children {
-			if count >= pattern.Count/2 {
-				suggestion.Children = append(suggestion.Children, childTag)
-			}
-		}
-
-		suggestions = append(suggestions, suggestion)
-	}
-
-	return suggestions
 }
 
 func generateSuggestionsWithoutAI(patterns map[string]*ElementPattern) []ComponentSuggestion {
@@ -400,101 +322,6 @@ func generateJSXCode(pattern *ElementPattern) string {
 	buf.WriteString("export default " + generateComponentName(pattern.TagName, generatePatternKey(example)) + ";")
 
 	return buf.String()
-}
-
-func enhanceWithAI(htmlInput string, suggestions []ComponentSuggestion, patterns map[string]*ElementPattern) ([]ComponentSuggestion, error) {
-	if globalAIClient == nil || !globalAIClient.IsEnabled() {
-		return suggestions, nil
-	}
-
-	var enhancedSuggestions []ComponentSuggestion
-	analyzedCount := 0
-	skippedCount := 0
-
-	for _, suggestion := range suggestions {
-		var pattern *ElementPattern
-		for _, p := range patterns {
-			if p.TagName == suggestion.TagName && p.Count == suggestion.Count {
-				pattern = p
-				break
-			}
-		}
-
-		if pattern == nil || len(pattern.Examples) == 0 {
-			enhancedSuggestions = append(enhancedSuggestions, suggestion)
-			continue
-		}
-
-		exampleHTML := nodeToHTML(pattern.Examples[0])
-		elementInfo := buildElementInfo(pattern, suggestion)
-
-		aiResult, err := globalAIClient.AnalyzeHTMLForComponents(exampleHTML, elementInfo)
-		if err != nil {
-			log.Printf("⚠️ AI analysis failed for %s: %v", suggestion.Name, err)
-			enhancedSuggestions = append(enhancedSuggestions, suggestion)
-			continue
-		}
-
-		analyzedCount++
-
-		if !aiResult.ShouldBeComponent {
-			log.Printf("🚫 AI determined '%s' should NOT be a component: %s", suggestion.Name, aiResult.Reason)
-			skippedCount++
-			continue
-		}
-
-		if aiResult.ComponentName != "" {
-			suggestion.Name = aiResult.ComponentName
-		}
-
-		if aiResult.Reason != "" {
-			suggestion.Description = fmt.Sprintf("%s (AI: %s)", suggestion.Description, aiResult.Reason)
-		}
-
-		if len(aiResult.Props) > 0 {
-			suggestion.Attributes = make(map[string]string)
-			for _, prop := range aiResult.Props {
-				suggestion.Attributes[prop] = "{string}"
-			}
-		}
-
-		suggestion.JSXCode = generateJSXCodeWithName(pattern, suggestion.Name)
-
-		enhancedSuggestions = append(enhancedSuggestions, suggestion)
-		log.Printf("✅ AI approved component '%s' (confidence: %s)", suggestion.Name, aiResult.Confidence)
-	}
-
-	log.Printf("📊 AI Analysis Summary: %d analyzed, %d skipped, %d approved", analyzedCount, skippedCount, len(enhancedSuggestions))
-
-	return enhancedSuggestions, nil
-}
-
-func buildElementInfo(pattern *ElementPattern, suggestion ComponentSuggestion) string {
-	var info strings.Builder
-	info.WriteString(fmt.Sprintf("Tag: %s\n", pattern.TagName))
-	info.WriteString(fmt.Sprintf("Count: %d\n", pattern.Count))
-
-	if len(pattern.Attributes) > 0 {
-		info.WriteString("Attributes: ")
-		attrs := make([]string, 0, len(pattern.Attributes))
-		for attr := range pattern.Attributes {
-			attrs = append(attrs, attr)
-		}
-		info.WriteString(strings.Join(attrs, ", "))
-		info.WriteString("\n")
-	}
-
-	if len(pattern.Children) > 0 {
-		info.WriteString("Child elements: ")
-		children := make([]string, 0, len(pattern.Children))
-		for child := range pattern.Children {
-			children = append(children, child)
-		}
-		info.WriteString(strings.Join(children, ", "))
-		info.WriteString("\n")
-	}
-
-	return info.String()
 }
 
 func nodeToHTML(n *html.Node) string {

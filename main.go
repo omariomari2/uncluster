@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"htmlfmt/internal/ai"
 	"htmlfmt/internal/analyzer"
 	"htmlfmt/internal/converter"
 	"htmlfmt/internal/extractor"
@@ -20,8 +19,6 @@ import (
 )
 
 func main() {
-	initCloudflareAI()
-
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
@@ -53,46 +50,6 @@ func main() {
 		fmt.Printf("Server failed to start: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func initCloudflareAI() {
-	workerURL := os.Getenv("CLOUDFLARE_WORKER_URL")
-	workerToken := os.Getenv("CLOUDFLARE_WORKER_TOKEN")
-	workerModel := os.Getenv("CLOUDFLARE_WORKER_MODEL")
-	if workerURL != "" {
-		config := ai.WorkerAIConfig{
-			URL:     workerURL,
-			Token:   workerToken,
-			Model:   workerModel,
-			Enabled: true,
-		}
-		client := ai.NewWorkerAIClient(config)
-		analyzer.SetAIClient(client)
-		return
-	}
-
-	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-	apiToken := os.Getenv("CLOUDFLARE_API_TOKEN")
-	model := os.Getenv("CLOUDFLARE_AI_MODEL")
-
-	if accountID == "" || apiToken == "" {
-		return
-	}
-
-	if model == "" {
-		model = "@cf/meta/llama-3-8b-instruct"
-	}
-
-	config := ai.CloudflareConfig{
-		AccountID: accountID,
-		APIToken:  apiToken,
-		Model:     model,
-		Enabled:   true,
-	}
-
-	client := ai.NewCloudflareClient(config)
-	analyzer.SetAIClient(client)
-
 }
 
 type FormatRequest struct {

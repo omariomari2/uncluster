@@ -1,8 +1,0 @@
-{
-  "name": "component-analyzer-worker",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@cloudflare/ai": "^1.1.0"
-  }
-}
