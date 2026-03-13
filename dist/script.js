@@ -23,8 +23,6 @@ const DOWNLOAD_STORAGE_KEY = 'downloadSettings';
 const DOWNLOAD_DEFAULTS = {
     useFilePicker: true,
     formatName: 'formatted.html',
-    jsxName: 'converted.jsx',
-    analyzeName: 'components.json',
     zipName: 'extracted.zip',
     tsxName: 'project.zip',
     ejsName: 'project-ejs.zip',
@@ -32,7 +30,6 @@ const DOWNLOAD_DEFAULTS = {
 
 const PICKER_TYPES = {
     html: [{ description: 'HTML File', accept: { 'text/html': ['.html'] } }],
-    jsx: [{ description: 'JSX File', accept: { 'text/plain': ['.jsx'] } }],
     zip: [{ description: 'ZIP Archive', accept: { 'application/zip': ['.zip'] } }],
 };
 
@@ -80,8 +77,6 @@ function storeDownloadSettings() {
     const settings = {
         useFilePicker: document.getElementById('download-picker-toggle')?.checked ?? false,
         formatName: document.getElementById('download-name-format')?.value ?? '',
-        jsxName: document.getElementById('download-name-jsx')?.value ?? '',
-        analyzeName: document.getElementById('download-name-analyze')?.value ?? '',
         zipName: document.getElementById('download-name-zip')?.value ?? '',
         tsxName: document.getElementById('download-name-tsx')?.value ?? '',
         ejsName: document.getElementById('download-name-ejs')?.value ?? '',
@@ -116,8 +111,6 @@ function initializeDownloadSettings() {
 
     const fields = [
         { id: 'download-name-format', value: settings.formatName },
-        { id: 'download-name-jsx', value: settings.jsxName },
-        { id: 'download-name-analyze', value: settings.analyzeName },
         { id: 'download-name-zip', value: settings.zipName },
         { id: 'download-name-tsx', value: settings.tsxName },
         { id: 'download-name-ejs', value: settings.ejsName },
@@ -207,10 +200,8 @@ function resetToInitialState() {
     const uploadButton = document.querySelector('.button.upload');
     const actionButtons = [
         document.querySelector('.button.first'),
-        document.querySelector('.button.fifth'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
-        document.querySelector('.button.sixth'),
         document.querySelector('.button.fourth')
     ];
     
@@ -233,10 +224,8 @@ function resetToInitialState() {
 function showActionButtons() {
     const actionButtons = [
         document.querySelector('.button.first'),
-        document.querySelector('.button.fifth'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
-        document.querySelector('.button.sixth'),
         document.querySelector('.button.fourth')
     ];
     
@@ -251,10 +240,8 @@ function initializeButtonStates() {
     const uploadButton = document.querySelector('.button.upload');
     const actionButtons = [
         document.querySelector('.button.first'),
-        document.querySelector('.button.fifth'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
-        document.querySelector('.button.sixth'),
         document.querySelector('.button.fourth')
     ];
     
@@ -388,81 +375,6 @@ async function formatHTML() {
     }
 }
 
-async function convertToJSX() {
-    if (!uploadedHTML) {
-        showToast('Please upload an HTML file first', 'error');
-        return;
-    }
-
-    const button = document.querySelector('.button.third');
-    setButtonLoading(button, true);
-
-    try {
-        const response = await fetch(`${API_BASE}/api/convert`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ html: uploadedHTML }),
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            const blob = new Blob([data.data], { type: 'text/jsx' });
-            const filename = resolveDownloadName('download-name-jsx', DOWNLOAD_DEFAULTS.jsxName, '.jsx');
-            const result = await downloadBlob(blob, filename, PICKER_TYPES.jsx);
-            if (result !== 'canceled') {
-                showToast('HTML converted to JSX and downloaded!', 'success');
-            }
-        } else {
-            showToast(data.error || 'Conversion failed', 'error');
-        }
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        setButtonLoading(button, false);
-    }
-}
-
-async function analyzeComponents() {
-    if (!uploadedHTML) {
-        showToast('Please upload an HTML file first', 'error');
-        return;
-    }
-
-    const button = document.querySelector('.button.sixth');
-    setButtonLoading(button, true);
-
-    try {
-        const response = await fetch(`${API_BASE}/api/analyze`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ html: uploadedHTML }),
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            const output = JSON.stringify(data.suggestions, null, 2);
-            const blob = new Blob([output], { type: 'application/json' });
-            const filename = resolveDownloadName('download-name-analyze', DOWNLOAD_DEFAULTS.analyzeName, '.json');
-            const result = await downloadBlob(blob, filename, [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }]);
-            if (result !== 'canceled') {
-                showToast(`Found ${data.suggestions?.length ?? 0} component suggestion(s). Downloaded!`, 'success');
-            }
-        } else {
-            showToast(data.error || 'Analysis failed', 'error');
-        }
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        setButtonLoading(button, false);
-    }
-}
-
 async function exportZip() {
     if (!uploadedHTML) {
         showToast('Please upload an HTML file first', 'error');
@@ -545,7 +457,7 @@ async function exportEJSProject() {
         return;
     }
 
-    const button = document.querySelector('.button.fifth');
+    const button = document.querySelector('.button.third');
     setButtonLoading(button, true);
 
     try {
@@ -619,11 +531,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const uploadButton = document.querySelector('.button.upload');
     const formatButton = document.querySelector('.button.sec');
-    const convertButton = document.querySelector('.button.third');
-    const analyzeButton = document.querySelector('.button.sixth');
+    const exportEJSButton = document.querySelector('.button.third');
     const exportZipButton = document.querySelector('.button.fourth');
     const exportTSXButton = document.querySelector('.button.first');
-    const exportEJSButton = document.querySelector('.button.fifth');
 
     if (uploadButton) {
         uploadButton.addEventListener('click', (e) => {
@@ -636,20 +546,6 @@ document.addEventListener('DOMContentLoaded', () => {
         formatButton.addEventListener('click', (e) => {
             e.preventDefault();
             formatHTML();
-        });
-    }
-
-    if (convertButton) {
-        convertButton.addEventListener('click', (e) => {
-            e.preventDefault();
-            convertToJSX();
-        });
-    }
-
-    if (analyzeButton) {
-        analyzeButton.addEventListener('click', (e) => {
-            e.preventDefault();
-            analyzeComponents();
         });
     }
 

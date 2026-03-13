@@ -443,21 +443,6 @@ span {
   right: 11%;
 }
 
-.button.fifth {
-  bottom: 28%;
-  right: 24%;
-}
-
-.button.fifth > button {
-  background-color: var(--ejsBg);
-  box-shadow: 0px -3px 15px 0px var(--ejsHi) inset;
-  color: var(--ejsFg);
-}
-
-.button.fifth > span {
-  background-color: var(--ejsHi);
-}
-
 .button.sec > button {
   background-color: var(--accentBg);
   box-shadow: 0px -3px 15px 0px var(--accentHi) inset;
@@ -474,13 +459,13 @@ span {
 }
 
 .button.third > button {
-  background-color: var(--secondaryBg);
-  box-shadow: 0px -3px 15px 0px var(--secondary) inset;
-  color: var(--secondaryFg);
+  background-color: var(--ejsBg);
+  box-shadow: 0px -3px 15px 0px var(--ejsHi) inset;
+  color: var(--ejsFg);
 }
 
 .button.third > span {
-  background-color: var(--secondaryHi);
+  background-color: var(--ejsHi);
 }
 
 .button.fourth {
@@ -496,21 +481,6 @@ span {
 
 .button.fourth > span {
   background-color: var(--tertiaryHi);
-}
-
-.button.sixth {
-  top: 13%;
-  left: 10%;
-}
-
-.button.sixth > button {
-  background-color: var(--analyzeBg);
-  box-shadow: 0px -3px 15px 0px var(--analyzeHi) inset;
-  color: var(--analyzeFg);
-}
-
-.button.sixth > span {
-  background-color: var(--analyzeHi);
 }
 
 .button.upload {
@@ -532,9 +502,7 @@ span {
 .button.first,
 .button.sec,
 .button.third,
-.button.fourth,
-.button.fifth,
-.button.sixth {
+.button.fourth {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
