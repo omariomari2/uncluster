@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineResource, externalCSS, externalJS []fetcher.FetchedResource) ([]byte, error) {
+func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineResource, externalCSS, externalJS []fetcher.FetchedResource, localAssets []extractor.LocalAsset) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := zip.NewWriter(&buf)
 
@@ -84,6 +84,19 @@ func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineRe
 					continue
 				}
 			}
+		}
+	}
+
+	if len(localAssets) > 0 {
+		for _, asset := range localAssets {
+			if len(asset.Content) == 0 {
+				continue
+			}
+			f, err := writer.Create(asset.Path)
+			if err != nil {
+				continue
+			}
+			f.Write(asset.Content)
 		}
 	}
 

@@ -8,7 +8,7 @@ const packageJSONTemplate = `{
   "main": "server.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "serve": "node server.js",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
@@ -65,22 +65,29 @@ export default defineConfig({
 const serverJSTemplate = `import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { existsSync } from 'fs'
+import { execSync } from 'child_process'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const distPath = path.join(__dirname, 'dist')
+
+if (!existsSync(distPath)) {
+  console.log('Building project for the first time...')
+  execSync('npm run build', { stdio: 'inherit', cwd: __dirname })
+}
 
 const app = express()
 const PORT = process.env.PORT || 8080
 
-app.use(express.static(path.join(__dirname, 'dist')))
+app.use(express.static(distPath))
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'))
+  res.sendFile(path.join(distPath, 'index.html'))
 })
 
 app.listen(PORT, () => {
   console.log('Server running at http://localhost:' + PORT)
-  console.log('Serving files from: ' + path.join(__dirname, 'dist'))
 })`
 
 const eslintConfigTemplate = `{
@@ -264,7 +271,12 @@ A React TypeScript project generated from HTML with Vite build system and Expres
    npm install
    ` + "```" + `
 
-2. Start development server:
+2. Start the server (builds automatically on first run):
+   ` + "```" + `bash
+   npm start
+   ` + "```" + `
+
+   OR for live hot-reload development:
    ` + "```" + `bash
    npm run dev
    ` + "```" + `

@@ -39,8 +39,8 @@
           <div class="dropdown-section">
             <h4>How To Use:</h4>
             <ol>
-              <li><strong>Upload HTML:</strong> Click the "Upload" button and select your HTML file</li>
-              <li><strong>Choose Action:</strong> After upload, select from:
+              <li><strong>Upload HTML:</strong> Click "Upload HTML" mode and select your HTML file — OR switch to "Scrape URL" mode and paste any website URL to fetch the page and all its assets automatically</li>
+              <li><strong>Choose Action:</strong> After upload or scrape, select from:
                 <ul>
                   <li><strong>Format HTML:</strong> Re-indent and normalize your HTML structure</li>
                   <li><strong>Export Zip:</strong> Extract inline CSS/JS into separate files and download external resources</li>
@@ -54,8 +54,6 @@
           </div>
         </div>
       </div>
-
-      <a href="./how-it-works.html" class="menu menu-link">How It Works</a>
 
       <div class="dropdown downloads">
         <p class="menu dropdown-trigger">Downloads</p>
@@ -92,7 +90,6 @@
         </div>
       </div>
 
-      <a href="https://github.com/omariomari2/uncluster.git" target="_blank" class="menu menu-link">Source Code</a>
       <button class="theme-btn" id="theme-toggle" onclick="toggleTheme()">☀ Light</button>
       <svg class="material-icons" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"><path d="M0 0h24v24H0z" fill="none"/><path d="M19 9H5c-.55 0-1 .45-1 1s.45 1 1 1h14c.55 0 1-.45 1-1s-.45-1-1-1zM5 15h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1z"/></svg>
     </nav>
@@ -120,7 +117,20 @@
     <a href="#" class="button sec"><button>Format HTML</button><span></span></a>
     <a href="#" class="button third"><button>Export EJS Project</button><span></span></a>
     <a href="#" class="button fourth"><button>Export Zip</button><span></span></a>
-    <a href="#" class="button upload"><button>Upload</button><span></span></a>
+
+    <div class="input-section">
+      <div class="input-mode-toggle">
+        <button class="mode-btn mode-btn-active" id="mode-upload-btn">Upload HTML</button>
+        <button class="mode-btn" id="mode-scrape-btn">Scrape URL</button>
+      </div>
+
+      <a href="#" class="button upload"><button>Upload</button><span></span></a>
+
+      <div class="scrape-input-area" id="scrape-input-area" style="display:none;">
+        <input type="url" id="scrape-url-input" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+        <a href="#" class="button scrape-btn" id="scrape-action-btn"><button>Scrape</button><span></span></a>
+      </div>
+    </div>
 
     <svg class="top-right" width="219" height="147" viewBox="0 0 219 147" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect opacity="0.18" x="10.4252" y="75.8326" width="7.50168" height="7.50168" transform="rotate(110.283 10.4252 75.8326)" fill="#686868" stroke="white" stroke-width="1.22683" />

@@ -108,6 +108,13 @@ func generateEJSReadme(config *EJSProjectConfig) (string, error) {
 	return buf.String(), nil
 }
 
+const minPartialBytes = 500
+const minPartialLines = 15
+
+func isPartialWorthExtracting(html string) bool {
+	return len(html) >= minPartialBytes && strings.Count(html, "\n") >= minPartialLines
+}
+
 func generateEJSViews(htmlContent string) (string, map[string]string, error) {
 	doc, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
@@ -137,6 +144,10 @@ func generateEJSViews(htmlContent string) (string, map[string]string, error) {
 		}
 		trimmed := strings.TrimSpace(content)
 		if trimmed == "" {
+			continue
+		}
+
+		if !isPartialWorthExtracting(trimmed) {
 			continue
 		}
 

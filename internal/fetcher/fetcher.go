@@ -18,6 +18,53 @@ type FetchedResource struct {
 	Error    error
 }
 
+// FetchRaw downloads a URL and returns the raw bytes plus the detected MIME type.
+// Used for binary assets such as images, fonts, and SVGs.
+// A 30-second timeout is used to accommodate slower CDNs.
+func FetchRaw(rawURL string) (content []byte, mimeType string, err error) {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read body: %w", err)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	// Strip parameters like charset
+	if idx := strings.Index(ct, ";"); idx != -1 {
+		ct = strings.TrimSpace(ct[:idx])
+	}
+
+	return data, ct, nil
+}
+
 func FetchExternalResources(urls []string, resourceType string) []FetchedResource {
 	if len(urls) == 0 {
 		return []FetchedResource{}
@@ -37,7 +84,17 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 	usedFilenames := make(map[string]int)
 
 	for _, resourceURL := range urls {
-		resp, err := client.Get(resourceURL)
+		req, reqErr := http.NewRequest("GET", resourceURL, nil)
+		if reqErr != nil {
+			results = append(results, FetchedResource{
+				URL:   resourceURL,
+				Type:  resourceType,
+				Error: reqErr,
+			})
+			continue
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+		resp, err := client.Do(req)
 		if err != nil {
 			results = append(results, FetchedResource{
 				URL:   resourceURL,
