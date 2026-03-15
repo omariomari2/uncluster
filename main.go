@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"htmlfmt/internal/analyzer"
-	"htmlfmt/internal/converter"
-	"htmlfmt/internal/extractor"
-	"htmlfmt/internal/formatter"
-	"htmlfmt/internal/nodejs"
-	"htmlfmt/internal/zipper"
+	"github.com/omariomari2/uncluster/internal/analyzer"
+	"github.com/omariomari2/uncluster/internal/converter"
+	"github.com/omariomari2/uncluster/internal/extractor"
+	"github.com/omariomari2/uncluster/internal/formatter"
+	"github.com/omariomari2/uncluster/internal/nodejs"
+	"github.com/omariomari2/uncluster/internal/scraper"
+	"github.com/omariomari2/uncluster/internal/zipper"
 	"os"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 func main() {
 	app := fiber.New(fiber.Config{
+		BodyLimit: 50 * 1024 * 1024, // 50 MB — allows large ZIP uploads and scraped pages
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 			if e, ok := err.(*fiber.Error); ok {
@@ -86,6 +88,10 @@ func setupRoutes(app *fiber.App) {
 	api.Post("/export-nodejs", handleExportNodeJS)
 
 	api.Post("/export-nodejs-ejs", handleExportNodeJSEJS)
+
+	api.Post("/scrape", handleScrape)
+	api.Post("/scrape-nodejs", handleScrapeNodeJS)
+	api.Post("/scrape-nodejs-ejs", handleScrapeNodeJSEJS)
 
 	api.Get("/health", handleHealth)
 
@@ -206,7 +212,7 @@ func handleExport(c *fiber.Ctx) error {
 		})
 	}
 
-	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS)
+	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS, extracted.LocalAssets)
 	if err != nil {
 		return c.Status(500).JSON(Response{
 			Success: false,
@@ -339,6 +345,130 @@ func handleExportNodeJSEJS(c *fiber.Ctx) error {
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-ejs.zip\"", projectName))
 	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
 
+	return c.Send(zipData)
+}
+
+type ScrapeRequest struct {
+	URL string `json:"url"`
+}
+
+func handleScrape(c *fiber.Ctx) error {
+	var req ScrapeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(Response{Success: false, Error: "Invalid request body"})
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		return c.Status(400).JSON(Response{Success: false, Error: "URL is required"})
+	}
+
+	extracted, err := scraper.ScrapeURL(req.URL)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS, extracted.LocalAssets)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", "attachment; filename=\"extracted.zip\"")
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+	return c.Send(zipData)
+}
+
+func handleScrapeNodeJS(c *fiber.Ctx) error {
+	var req ScrapeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(Response{Success: false, Error: "Invalid request body"})
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		return c.Status(400).JSON(Response{Success: false, Error: "URL is required"})
+	}
+
+	extracted, err := scraper.ScrapeURL(req.URL)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	rewrittenHTML := extracted.RewriteForNodeJS()
+	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
+
+	config := &nodejs.ProjectConfig{
+		ProjectName:    projectName,
+		PackageManager: "npm",
+		HTML:           rewrittenHTML,
+		CSS:            extracted.CSS,
+		JS:             extracted.JS,
+		ExternalCSS:    extracted.ExternalCSS,
+		ExternalJS:     extracted.ExternalJS,
+	}
+
+	projectFiles, err := nodejs.GenerateProject(config)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	binaryFiles := make(map[string][]byte, len(extracted.LocalAssets))
+	for _, asset := range extracted.LocalAssets {
+		binaryFiles["public/"+asset.Path] = asset.Content
+	}
+
+	zipData, err := nodejs.CreateProjectZipWithBinary(projectFiles.Files, binaryFiles, projectName)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", projectName))
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+	return c.Send(zipData)
+}
+
+func handleScrapeNodeJSEJS(c *fiber.Ctx) error {
+	var req ScrapeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(Response{Success: false, Error: "Invalid request body"})
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		return c.Status(400).JSON(Response{Success: false, Error: "URL is required"})
+	}
+
+	extracted, err := scraper.ScrapeURL(req.URL)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	rewrittenHTML := extracted.RewriteForEJS()
+	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
+
+	config := &nodejs.EJSProjectConfig{
+		ProjectName: projectName,
+		HTML:        rewrittenHTML,
+		InlineCSS:   extracted.InlineCSS,
+		InlineJS:    extracted.InlineJS,
+		ExternalCSS: extracted.ExternalCSS,
+		ExternalJS:  extracted.ExternalJS,
+	}
+
+	projectFiles, err := nodejs.GenerateEJSProject(config)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	binaryFiles := make(map[string][]byte, len(extracted.LocalAssets))
+	for _, asset := range extracted.LocalAssets {
+		binaryFiles["public/"+asset.Path] = asset.Content
+	}
+
+	zipData, err := nodejs.CreateProjectZipWithBinary(projectFiles.Files, binaryFiles, projectName)
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-ejs.zip\"", projectName))
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
 	return c.Send(zipData)
 }
 

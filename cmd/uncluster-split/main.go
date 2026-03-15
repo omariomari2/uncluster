@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"htmlfmt/internal/extractor"
+	"github.com/omariomari2/uncluster/internal/extractor"
 	"os"
 	"path/filepath"
 	"time"

@@ -2,8 +2,8 @@ package nodejs
 
 import (
 	"fmt"
-	"htmlfmt/internal/converter"
-	"htmlfmt/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/converter"
+	"github.com/omariomari2/uncluster/internal/fetcher"
 	"log"
 	"strings"
 

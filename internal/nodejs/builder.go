@@ -2,7 +2,7 @@ package nodejs
 
 import (
 	"fmt"
-	"htmlfmt/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/fetcher"
 	"log"
 	"strings"
 	"text/template"

@@ -1,4 +1,4 @@
-module htmlfmt
+module github.com/omariomari2/uncluster
 
 go 1.21
 

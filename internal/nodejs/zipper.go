@@ -9,6 +9,12 @@ import (
 )
 
 func CreateProjectZip(files map[string]string, projectName string) ([]byte, error) {
+	return CreateProjectZipWithBinary(files, nil, projectName)
+}
+
+// CreateProjectZipWithBinary creates a ZIP archive containing both text files
+// and binary files (images, fonts, SVGs from scraped or uploaded sources).
+func CreateProjectZipWithBinary(files map[string]string, binaryFiles map[string][]byte, projectName string) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := zip.NewWriter(&buf)
 
@@ -29,11 +35,27 @@ func CreateProjectZip(files map[string]string, projectName string) ([]byte, erro
 		written++
 	}
 
+	for filepath, data := range binaryFiles {
+		fullPath := projectName + "/" + filepath
+
+		file, err := writer.Create(fullPath)
+		if err != nil {
+			log.Printf("zip: failed to create binary entry %s: %v", fullPath, err)
+			continue
+		}
+
+		if _, err = file.Write(data); err != nil {
+			log.Printf("zip: failed to write binary entry %s: %v", fullPath, err)
+			continue
+		}
+		written++
+	}
+
 	if err := writer.Close(); err != nil {
 		return nil, err
 	}
 
-	if written == 0 && len(files) > 0 {
+	if written == 0 && (len(files) > 0 || len(binaryFiles) > 0) {
 		return nil, fmt.Errorf("failed to write any files to zip archive")
 	}
 

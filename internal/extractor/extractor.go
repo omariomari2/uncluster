@@ -3,8 +3,8 @@ package extractor
 import (
 	"bytes"
 	"fmt"
-	"htmlfmt/internal/fetcher"
-	"htmlfmt/internal/formatter"
+	"github.com/omariomari2/uncluster/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/formatter"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -18,11 +18,20 @@ type ExtractedContent struct {
 	InlineJS    []InlineResource
 	ExternalCSS []fetcher.FetchedResource
 	ExternalJS  []fetcher.FetchedResource
+	LocalAssets []LocalAsset
 }
 
 type InlineResource struct {
 	Path    string
 	Content string
+}
+
+// LocalAsset holds a binary file (image, font, SVG, etc.) that was either
+// bundled in an uploaded ZIP or downloaded by the URL scraper.
+type LocalAsset struct {
+	Path    string // relative path as it should appear in the export, e.g. "assets/logo.png"
+	Content []byte // raw binary content
+	MIME    string // e.g. "image/png", "font/woff2"
 }
 
 func Extract(htmlContent string) (*ExtractedContent, error) {
