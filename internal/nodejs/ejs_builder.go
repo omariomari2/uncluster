@@ -3,9 +3,9 @@ package nodejs
 import (
 	"bytes"
 	"fmt"
-	"htmlfmt/internal/extractor"
-	"htmlfmt/internal/fetcher"
-	"htmlfmt/internal/formatter"
+	"github.com/omariomari2/uncluster/internal/extractor"
+	"github.com/omariomari2/uncluster/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/formatter"
 	"sort"
 	"strings"
 	"text/template"

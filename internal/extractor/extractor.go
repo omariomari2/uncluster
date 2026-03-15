@@ -3,8 +3,8 @@ package extractor
 import (
 	"bytes"
 	"fmt"
-	"htmlfmt/internal/fetcher"
-	"htmlfmt/internal/formatter"
+	"github.com/omariomari2/uncluster/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/formatter"
 	"strings"
 
 	"golang.org/x/net/html"

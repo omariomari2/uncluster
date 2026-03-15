@@ -3,8 +3,8 @@ package zipper
 import (
 	"archive/zip"
 	"bytes"
-	"htmlfmt/internal/extractor"
-	"htmlfmt/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/extractor"
+	"github.com/omariomari2/uncluster/internal/fetcher"
 	"io"
 )
 

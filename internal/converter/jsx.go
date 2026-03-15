@@ -2,8 +2,8 @@ package converter
 
 import (
 	"fmt"
-	"htmlfmt/internal/analyzer"
-	"htmlfmt/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/analyzer"
+	"github.com/omariomari2/uncluster/internal/fetcher"
 	"strings"
 
 	"golang.org/x/net/html"
