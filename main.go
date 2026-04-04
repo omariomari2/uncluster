@@ -273,7 +273,12 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 		})
 	}
 
-	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
+	binaryFiles := make(map[string][]byte, len(extracted.LocalAssets))
+	for _, asset := range extracted.LocalAssets {
+		binaryFiles["public/"+asset.Path] = asset.Content
+	}
+
+	zipData, err := nodejs.CreateProjectZipWithBinary(projectFiles.Files, binaryFiles, projectName)
 	if err != nil {
 		return c.Status(500).JSON(Response{
 			Success: false,
@@ -333,7 +338,12 @@ func handleExportNodeJSEJS(c *fiber.Ctx) error {
 		})
 	}
 
-	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
+	binaryFiles := make(map[string][]byte, len(extracted.LocalAssets))
+	for _, asset := range extracted.LocalAssets {
+		binaryFiles["public/"+asset.Path] = asset.Content
+	}
+
+	zipData, err := nodejs.CreateProjectZipWithBinary(projectFiles.Files, binaryFiles, projectName)
 	if err != nil {
 		return c.Status(500).JSON(Response{
 			Success: false,

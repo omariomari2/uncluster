@@ -50,6 +50,10 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 
 	extractInlineResources(doc, &cssContent, &jsContent, &inlineCSS, &inlineJS, &cssIndex, &jsIndex)
 
+	var inlineSVGs []LocalAsset
+	svgIndex := 0
+	extractInlineSVGs(doc, &inlineSVGs, &svgIndex)
+
 	cssURLs, jsURLs := findExternalResourceURLs(doc)
 
 	var externalCSS []fetcher.FetchedResource
@@ -83,6 +87,7 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 		InlineJS:    inlineJS,
 		ExternalCSS: externalCSS,
 		ExternalJS:  externalJS,
+		LocalAssets: inlineSVGs,
 	}, nil
 }
 
@@ -214,6 +219,38 @@ func buildScriptSrcNode(original *html.Node, src string) *html.Node {
 		Data: "script",
 		Attr: attrs,
 	}
+}
+
+func extractInlineSVGs(n *html.Node, inlineSVGs *[]LocalAsset, svgIndex *int) {
+	if n.Type == html.ElementNode && n.Data == "svg" {
+		var svgBuf bytes.Buffer
+		html.Render(&svgBuf, n)
+		*svgIndex++
+		filename := fmt.Sprintf("inline/image-%d.svg", *svgIndex)
+		*inlineSVGs = append(*inlineSVGs, LocalAsset{
+			Path:    filename,
+			Content: svgBuf.Bytes(),
+			MIME:    "image/svg+xml",
+		})
+		replaceNode(n, buildImgNodeFromSVG(n, filename))
+		return
+	}
+	for c := n.FirstChild; c != nil; {
+		next := c.NextSibling
+		extractInlineSVGs(c, inlineSVGs, svgIndex)
+		c = next
+	}
+}
+
+func buildImgNodeFromSVG(svgNode *html.Node, src string) *html.Node {
+	attrs := []html.Attribute{{Key: "src", Val: src}}
+	for _, attr := range svgNode.Attr {
+		switch attr.Key {
+		case "id", "class", "width", "height", "style":
+			attrs = append(attrs, attr)
+		}
+	}
+	return &html.Node{Type: html.ElementNode, Data: "img", Attr: attrs}
 }
 
 func copyAttributesExcluding(attrs []html.Attribute, skip map[string]bool) []html.Attribute {
@@ -516,6 +553,10 @@ func rewriteLinksForEJS(n *html.Node) {
 			if src := getAttribute(n, "src"); strings.HasPrefix(src, "inline/") || strings.HasPrefix(src, "external/js/") {
 				updateAttribute(n, "src", "/"+src)
 			}
+		} else if n.Data == "img" {
+			if src := getAttribute(n, "src"); strings.HasPrefix(src, "inline/") {
+				updateAttribute(n, "src", "/"+src)
+			}
 		}
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -544,6 +585,10 @@ func rewriteLinksForNodeJS(n *html.Node) {
 					filename := strings.TrimPrefix(src, "external/js/")
 					updateAttribute(n, "src", "/scripts/external/"+filename)
 				}
+			}
+		} else if n.Data == "img" {
+			if src := getAttribute(n, "src"); strings.HasPrefix(src, "inline/") {
+				updateAttribute(n, "src", "/"+src)
 			}
 		}
 	}
