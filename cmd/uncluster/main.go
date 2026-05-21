@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/omariomari2/uncluster/internal/analyzer"
+	"github.com/omariomari2/uncluster/internal/bundle"
 	"github.com/omariomari2/uncluster/internal/converter"
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/formatter"
@@ -14,7 +15,7 @@ import (
 	"time"
 )
 
-var validFormats = []string{"split", "nodejs", "nodejs-ejs", "format", "jsx", "analyze"}
+var validFormats = []string{"split", "nodejs", "nodejs-ejs", "format", "jsx", "analyze", "bundle"}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `uncluster — process HTML files from the command line
@@ -29,9 +30,11 @@ Formats:
   format       Re-indent and normalize HTML (writes to stdout or output dir)
   jsx          Convert HTML to a React JSX component (writes to stdout or output dir)
   analyze      Detect repeated UI patterns and suggest components (JSON)
+  bundle       Find source index.html from a ZIP/HTML input and write index.html, unzip/, and ejs/
 
 Examples:
   uncluster index.html -to split -out ./output
+  uncluster example-site.zip -to bundle -out ./sites
   uncluster page.html -to nodejs -out ./my-project
   uncluster template.html -to format
   uncluster landing.html -to jsx
@@ -40,13 +43,14 @@ Examples:
 Flags:
   -to string    output format (required)
   -out string   output directory (default: ./<format>-output)
+  -dest string  exact final output directory for bundle mode
 `)
 }
 
 // parseArgs handles flag parsing regardless of argument order.
 // Go's flag package stops at the first non-flag arg, so we separate
 // flags and positional args ourselves.
-func parseArgs() (inputFile, format, outDir string) {
+func parseArgs() (inputFile, format, outDir, destDir string) {
 	args := os.Args[1:]
 
 	var positional []string
@@ -60,6 +64,11 @@ func parseArgs() (inputFile, format, outDir string) {
 		case "-out":
 			if i+1 < len(args) {
 				outDir = args[i+1]
+				i++
+			}
+		case "-dest":
+			if i+1 < len(args) {
+				destDir = args[i+1]
 				i++
 			}
 		case "-h", "-help", "--help":
@@ -76,13 +85,13 @@ func parseArgs() (inputFile, format, outDir string) {
 	}
 
 	if len(positional) < 1 {
-		return "", format, outDir
+		return "", format, outDir, destDir
 	}
-	return positional[0], format, outDir
+	return positional[0], format, outDir, destDir
 }
 
 func main() {
-	inputFile, format, outDir := parseArgs()
+	inputFile, format, outDir, destDir := parseArgs()
 
 	if inputFile == "" {
 		usage()
@@ -101,17 +110,24 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: unknown format %q — valid formats: %s\n", format, strings.Join(validFormats, ", "))
 		os.Exit(2)
 	}
+	if destDir != "" && format != "bundle" {
+		fmt.Fprintln(os.Stderr, "error: -dest is only supported with -to bundle")
+		os.Exit(2)
+	}
 
 	inputAbs, err := filepath.Abs(inputFile)
 	if err != nil {
 		fail("resolve input path", err)
 	}
 
-	raw, err := os.ReadFile(inputAbs)
-	if err != nil {
-		fail("read input file", err)
+	var htmlContent string
+	if format != "bundle" {
+		raw, err := os.ReadFile(inputAbs)
+		if err != nil {
+			fail("read input file", err)
+		}
+		htmlContent = string(raw)
 	}
-	htmlContent := string(raw)
 
 	switch format {
 	case "format":
@@ -126,6 +142,8 @@ func main() {
 		runNodeJS(htmlContent, resolveOutDir(outDir, "nodejs-project"))
 	case "nodejs-ejs":
 		runNodeJSEJS(htmlContent, resolveOutDir(outDir, "nodejs-ejs-project"))
+	case "bundle":
+		runBundle(inputAbs, resolveOutDir(outDir, "bundle-output"), destDir)
 	}
 }
 
@@ -384,6 +402,29 @@ func runNodeJSEJS(htmlContent, outDir string) {
 
 	fmt.Printf("EJS project generated: %s\n", outDir)
 	fmt.Printf("  cd %s && npm install && npm start\n", outDir)
+}
+
+// --- bundle ---
+
+func runBundle(inputPath, outDir, destDir string) {
+	options := bundle.Options{OutputBase: outDir}
+	if destDir != "" {
+		destAbs, err := filepath.Abs(destDir)
+		if err != nil {
+			fail("resolve destination path", err)
+		}
+		options.Destination = destAbs
+	}
+
+	result, err := bundle.ProcessWithOptions(inputPath, options)
+	if err != nil {
+		fail("bundle source", err)
+	}
+
+	fmt.Printf("Bundle generated: %s\n", result.OutputDir)
+	fmt.Printf("  source: %s\n", result.IndexPath)
+	fmt.Printf("  split:  %s\n", result.SplitDir)
+	fmt.Printf("  ejs:    %s\n", result.EJSDir)
 }
 
 // --- helpers ---

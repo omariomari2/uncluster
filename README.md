@@ -205,6 +205,31 @@ go run ./cmd/uncluster-split -input <file.html> -output <dir> [-manifest true]
 | `-output` | yes | Directory to write split output files |
 | `-manifest` | no | Write `split-manifest.json` (default: `true`) |
 
+### CLI - full bundle automation
+
+The main CLI can also take a Chrome-extension ZIP or direct HTML file and produce the complete working folder:
+
+```bash
+go run ./cmd/uncluster <source.zip|index.html> -to bundle -out ./sites
+```
+
+Use `-dest` when you want to choose the exact final folder instead of writing to `-out/<site-name>`:
+
+```bash
+go run ./cmd/uncluster <source.zip|index.html> -to bundle -dest ./sites/my-final-folder
+```
+
+Output:
+
+```text
+sites/<site-name>/
+  index.html
+  unzip/
+  ejs/
+```
+
+For ZIP inputs, Uncluster finds the best `index.html`, preferring a subfolder whose name matches the ZIP filename, then preserves only locally referenced assets. The temporary ZIP extraction and any unreferenced files from the original archive are discarded after the run.
+
 ---
 
 ## API endpoints
