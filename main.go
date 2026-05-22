@@ -1,8 +1,14 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
+	"io"
+	"path/filepath"
+
 	"github.com/omariomari2/uncluster/internal/analyzer"
+	"github.com/omariomari2/uncluster/internal/bundle"
 	"github.com/omariomari2/uncluster/internal/converter"
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/formatter"
@@ -88,6 +94,8 @@ func setupRoutes(app *fiber.App) {
 	api.Post("/export-nodejs", handleExportNodeJS)
 
 	api.Post("/export-nodejs-ejs", handleExportNodeJSEJS)
+
+	api.Post("/bundle-zip", handleBundleZip)
 
 	api.Post("/scrape", handleScrape)
 	api.Post("/scrape-nodejs", handleScrapeNodeJS)
@@ -468,6 +476,83 @@ func handleScrapeNodeJSEJS(c *fiber.Ctx) error {
 
 	c.Set("Content-Type", "application/zip")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-ejs.zip\"", projectName))
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+	return c.Send(zipData)
+}
+
+func handleBundleZip(c *fiber.Ctx) error {
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.Status(400).JSON(Response{Success: false, Error: "ZIP file is required"})
+	}
+	if !strings.HasSuffix(strings.ToLower(file.Filename), ".zip") {
+		return c.Status(400).JSON(Response{Success: false, Error: "Only .zip files are accepted"})
+	}
+
+	tmpZip, err := os.CreateTemp("", "uncluster-upload-*.zip")
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: "Failed to create temp file"})
+	}
+	tmpZipPath := tmpZip.Name()
+	defer os.Remove(tmpZipPath)
+
+	src, err := file.Open()
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: "Failed to open uploaded file"})
+	}
+	_, copyErr := io.Copy(tmpZip, src)
+	src.Close()
+	tmpZip.Close()
+	if copyErr != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: "Failed to save uploaded file"})
+	}
+
+	tmpOutDir, err := os.MkdirTemp("", "uncluster-bundle-out-*")
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: "Failed to create output directory"})
+	}
+	defer os.RemoveAll(tmpOutDir)
+
+	_, err = bundle.ProcessWithOptions(tmpZipPath, bundle.Options{OutputBase: tmpOutDir})
+	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	walkErr := filepath.Walk(tmpOutDir, func(path string, info os.FileInfo, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(tmpOutDir, path)
+		if err != nil {
+			return err
+		}
+		w, err := zw.Create(filepath.ToSlash(rel))
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	})
+	if walkErr != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: "Failed to create output archive: " + walkErr.Error()})
+	}
+	if err := zw.Close(); err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: "Failed to finalize archive"})
+	}
+
+	zipData := buf.Bytes()
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", "attachment; filename=\"bundle.zip\"")
 	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
 	return c.Send(zipData)
 }

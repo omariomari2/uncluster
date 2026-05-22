@@ -31,6 +31,10 @@
   --analyzeBg: hsla(270, 70%, 65%, 1%);
   --analyzeFg: hsl(270, 70%, 88%);
   --analyzeHi: hsla(270, 70%, 75%, 25%);
+  --bundle: hsl(340, 85%, 68%);
+  --bundleBg: hsla(340, 85%, 68%, 1%);
+  --bundleFg: hsl(340, 85%, 88%);
+  --bundleHi: hsla(340, 85%, 75%, 25%);
 }
 
 body {
@@ -500,10 +504,26 @@ span {
   background-color: var(--uploadHi);
 }
 
+.button.fifth {
+  top: 38%;
+  right: 5%;
+}
+
+.button.fifth > button {
+  background-color: var(--bundleBg);
+  box-shadow: 0px -3px 15px 0px var(--bundleHi) inset;
+  color: var(--bundleFg);
+}
+
+.button.fifth > span {
+  background-color: var(--bundleHi);
+}
+
 .button.first,
 .button.sec,
 .button.third,
-.button.fourth {
+.button.fourth,
+.button.fifth {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -582,6 +602,10 @@ span {
   --analyzeBg: hsla(270, 48%, 38%, 6%);
   --analyzeFg: hsl(270, 48%, 24%);
   --analyzeHi: hsla(270, 48%, 46%, 16%);
+  --bundle:   hsl(340, 72%, 38%);
+  --bundleBg: hsla(340, 72%, 38%, 6%);
+  --bundleFg: hsl(340, 72%, 24%);
+  --bundleHi: hsla(340, 72%, 46%, 16%);
 }
 
 /* nav */

@@ -46,6 +46,7 @@
                   <li><strong>Export Zip:</strong> Extract inline CSS/JS into separate files and download external resources</li>
                   <li><strong>Export TSX Project:</strong> Generate a complete Express + Vite + TypeScript project</li>
                   <li><strong>Export EJS Project:</strong> Generate a complete Express + EJS server-rendered project</li>
+                  <li><strong>Bundle ZIP → EJS:</strong> Upload a ZIP of a full website to get a split resource folder plus a ready-to-run Express + EJS project in one archive</li>
                 </ul>
               </li>
               <li><strong>Download Results:</strong> Your processed files will automatically download</li>
@@ -83,6 +84,10 @@
                   <div class="download-field-title">Export EJS Project filename</div>
                   <input type="text" id="download-name-ejs" value="project-ejs.zip" autocomplete="off" spellcheck="false">
                 </label>
+                <label class="download-field">
+                  <div class="download-field-title">Bundle ZIP filename</div>
+                  <input type="text" id="download-name-bundle" value="bundle.zip" autocomplete="off" spellcheck="false">
+                </label>
               </div>
               <p class="download-note">Leave a field blank to use the server default.</p>
             </div>
@@ -117,6 +122,7 @@
     <a href="#" class="button sec"><button>Format HTML</button><span></span></a>
     <a href="#" class="button third"><button>Export EJS Project</button><span></span></a>
     <a href="#" class="button fourth"><button>Export Zip</button><span></span></a>
+    <a href="#" class="button fifth"><button>Bundle ZIP → EJS</button><span></span></a>
 
     <div class="input-section">
       <div class="input-mode-toggle">

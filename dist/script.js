@@ -19,6 +19,7 @@ const API_BASE = window.location.origin.includes('localhost') && !window.locatio
     : '';
 
 let uploadedHTML = '';
+let uploadedZip = null;
 let scrapeMode = false; // true = URL scrape mode, false = file upload mode
 const DOWNLOAD_STORAGE_KEY = 'downloadSettings';
 const DOWNLOAD_DEFAULTS = {
@@ -27,6 +28,7 @@ const DOWNLOAD_DEFAULTS = {
     zipName: 'extracted.zip',
     tsxName: 'project.zip',
     ejsName: 'project-ejs.zip',
+    bundleName: 'bundle.zip',
 };
 
 const PICKER_TYPES = {
@@ -81,6 +83,7 @@ function storeDownloadSettings() {
         zipName: document.getElementById('download-name-zip')?.value ?? '',
         tsxName: document.getElementById('download-name-tsx')?.value ?? '',
         ejsName: document.getElementById('download-name-ejs')?.value ?? '',
+        bundleName: document.getElementById('download-name-bundle')?.value ?? '',
     };
     try {
         localStorage.setItem(DOWNLOAD_STORAGE_KEY, JSON.stringify(settings));
@@ -115,6 +118,7 @@ function initializeDownloadSettings() {
         { id: 'download-name-zip', value: settings.zipName },
         { id: 'download-name-tsx', value: settings.tsxName },
         { id: 'download-name-ejs', value: settings.ejsName },
+        { id: 'download-name-bundle', value: settings.bundleName },
     ];
 
     fields.forEach((field) => {
@@ -203,7 +207,8 @@ function resetToInitialState() {
         document.querySelector('.button.first'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
-        document.querySelector('.button.fourth')
+        document.querySelector('.button.fourth'),
+        document.querySelector('.button.fifth'),
     ];
 
     if (uploadButton) {
@@ -220,6 +225,7 @@ function resetToInitialState() {
     });
 
     uploadedHTML = '';
+    uploadedZip = null;
 
     // Also reset scrape mode URL indicator
     const scrapeArea = document.getElementById('scrape-input-area');
@@ -247,11 +253,13 @@ function setInputMode(mode) {
 
     // Reset state when switching modes
     uploadedHTML = '';
+    uploadedZip = null;
     const actionButtons = [
         document.querySelector('.button.first'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
-        document.querySelector('.button.fourth')
+        document.querySelector('.button.fourth'),
+        document.querySelector('.button.fifth'),
     ];
     actionButtons.forEach(b => b && b.classList.remove('button-visible'));
     const uploadBtnEl = document.querySelector('.button.upload button');
@@ -263,14 +271,31 @@ function showActionButtons() {
         document.querySelector('.button.first'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
-        document.querySelector('.button.fourth')
+        document.querySelector('.button.fourth'),
     ];
-    
+    const bundleButton = document.querySelector('.button.fifth');
+
     actionButtons.forEach(button => {
         if (button) {
             button.classList.add('button-visible');
         }
     });
+    if (bundleButton) bundleButton.classList.remove('button-visible');
+}
+
+function showZipActionButton() {
+    const actionButtons = [
+        document.querySelector('.button.first'),
+        document.querySelector('.button.sec'),
+        document.querySelector('.button.third'),
+        document.querySelector('.button.fourth'),
+    ];
+    const bundleButton = document.querySelector('.button.fifth');
+
+    actionButtons.forEach(button => {
+        if (button) button.classList.remove('button-visible');
+    });
+    if (bundleButton) bundleButton.classList.add('button-visible');
 }
 
 function initializeButtonStates() {
@@ -279,13 +304,14 @@ function initializeButtonStates() {
         document.querySelector('.button.first'),
         document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
-        document.querySelector('.button.fourth')
+        document.querySelector('.button.fourth'),
+        document.querySelector('.button.fifth'),
     ];
-    
+
     if (uploadButton) {
         uploadButton.classList.remove('button-hidden');
     }
-    
+
     actionButtons.forEach(button => {
         if (button) {
             button.classList.remove('button-visible');
@@ -354,20 +380,28 @@ async function uploadFile() {
     
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.html,.htm';
+    input.accept = '.html,.htm,.zip';
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
+        const isZip = file.name.toLowerCase().endsWith('.zip');
+
         try {
-            const text = await file.text();
-            uploadedHTML = text;
-            showToast(`File "${file.name}" uploaded successfully!`, 'success');
-            
-            changeUploadButtonToFinish();
-            setTimeout(() => {
-                showActionButtons();
-            }, 200);
+            if (isZip) {
+                uploadedZip = file;
+                uploadedHTML = '';
+                showToast(`ZIP "${file.name}" uploaded — ready to bundle!`, 'success');
+                changeUploadButtonToFinish();
+                setTimeout(() => showZipActionButton(), 200);
+            } else {
+                const text = await file.text();
+                uploadedHTML = text;
+                uploadedZip = null;
+                showToast(`File "${file.name}" uploaded successfully!`, 'success');
+                changeUploadButtonToFinish();
+                setTimeout(() => showActionButtons(), 200);
+            }
         } catch (error) {
             showToast('Error reading file: ' + error.message, 'error');
         }
@@ -582,6 +616,42 @@ async function exportEJSProject() {
     }
 }
 
+async function bundleZip() {
+    if (!uploadedZip) {
+        showToast('Please upload a ZIP file first', 'error');
+        return;
+    }
+
+    const button = document.querySelector('.button.fifth');
+    setButtonLoading(button, true);
+
+    try {
+        const formData = new FormData();
+        formData.append('file', uploadedZip);
+
+        const response = await fetch(`${API_BASE}/api/bundle-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Bundle failed');
+        }
+
+        const blob = await response.blob();
+        const filename = resolveDownloadName('download-name-bundle', DOWNLOAD_DEFAULTS.bundleName, '.zip');
+        const result = await downloadBlob(blob, filename, PICKER_TYPES.zip);
+        if (result !== 'canceled') {
+            showToast('ZIP bundled and downloaded!', 'success');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+    } finally {
+        setButtonLoading(button, false);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
     initializeButtonStates();
@@ -647,6 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportEJSButton = document.querySelector('.button.third');
     const exportZipButton = document.querySelector('.button.fourth');
     const exportTSXButton = document.querySelector('.button.first');
+    const bundleZipButton = document.querySelector('.button.fifth');
 
     if (uploadButton) {
         uploadButton.addEventListener('click', (e) => {
@@ -692,6 +763,13 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 exportEJSProject();
             }
+        });
+    }
+
+    if (bundleZipButton) {
+        bundleZipButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            bundleZip();
         });
     }
 });
