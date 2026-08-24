@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/omariomari2/uncluster/internal/converter"
 	"github.com/omariomari2/uncluster/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/htmlutil"
 	"log"
 	"strings"
 
@@ -34,7 +35,7 @@ func generateTSXViews(
 		return nil, "", "", err
 	}
 
-	body := findElement(doc, "body")
+	body := htmlutil.FindElement(doc, "body")
 	if body == nil {
 		mc, convErr := converter.ConvertSectionToTSX(htmlContent, "MainComponent")
 		if convErr != nil {

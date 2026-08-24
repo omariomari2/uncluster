@@ -10,6 +10,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/omariomari2/uncluster/internal/htmlutil"
+
 	"golang.org/x/net/html"
 )
 
@@ -121,7 +123,7 @@ func generateEJSViews(htmlContent string) (string, map[string]string, error) {
 		return "", nil, err
 	}
 
-	body := findElement(doc, "body")
+	body := htmlutil.FindElement(doc, "body")
 	if body == nil {
 		return htmlContent, map[string]string{}, nil
 	}
@@ -514,20 +516,6 @@ func renderNodeHTML(n *html.Node) (string, error) {
 		return "", err
 	}
 	return buf.String(), nil
-}
-
-func findElement(n *html.Node, tagName string) *html.Node {
-	if n.Type == html.ElementNode && n.Data == tagName {
-		return n
-	}
-
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if result := findElement(c, tagName); result != nil {
-			return result
-		}
-	}
-
-	return nil
 }
 
 func getAttributeValue(n *html.Node, key string) string {

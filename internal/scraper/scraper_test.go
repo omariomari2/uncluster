@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/omariomari2/uncluster/internal/extractor"
 	"golang.org/x/net/html"
 )
 
@@ -75,73 +74,6 @@ func TestRewriteHTMLPathsRewritesEverySrcsetCandidate(t *testing.T) {
 	}
 }
 
-func TestExtractInlineResourcesPreservesDataScripts(t *testing.T) {
-	doc := parseScraperDocument(t, `
-		<script type="application/ld+json">{"name":"Uncluster"}</script>
-		<script>window.ready = true</script>`)
-	var cssContent strings.Builder
-	var jsContent strings.Builder
-	var inlineCSS []extractor.InlineResource
-	var inlineJS []extractor.InlineResource
-	cssIndex := 0
-	jsIndex := 0
-
-	extractInlineResources(
-		doc,
-		&cssContent,
-		&jsContent,
-		&inlineCSS,
-		&inlineJS,
-		&cssIndex,
-		&jsIndex,
-	)
-
-	if len(inlineJS) != 1 {
-		t.Fatalf("extractInlineResources() extracted %d scripts; want 1 executable script", len(inlineJS))
-	}
-	got := renderScraperDocument(t, doc)
-	for _, want := range []string{
-		`type="application/ld+json"`,
-		`{"name":"Uncluster"}`,
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("extractInlineResources() removed data script content %q; got %s", want, got)
-		}
-	}
-}
-
-func TestExtractInlineResourcesUsesPortableRelativePaths(t *testing.T) {
-	doc := parseScraperDocument(t, `
-		<style>body { color: red; }</style>
-		<script>window.ready = true</script>`)
-	var cssContent strings.Builder
-	var jsContent strings.Builder
-	var inlineCSS []extractor.InlineResource
-	var inlineJS []extractor.InlineResource
-	cssIndex := 0
-	jsIndex := 0
-
-	extractInlineResources(
-		doc,
-		&cssContent,
-		&jsContent,
-		&inlineCSS,
-		&inlineJS,
-		&cssIndex,
-		&jsIndex,
-	)
-
-	got := renderScraperDocument(t, doc)
-	for _, want := range []string{
-		`href="inline/style-1.css"`,
-		`src="inline/script-1.js"`,
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("extractInlineResources() output missing %q; got %s", want, got)
-		}
-	}
-}
-
 func TestRewriteCSSURLsUsesDownloadedAssets(t *testing.T) {
 	css := `.hero { background: url("../images/hero.png"); }
 @font-face { src: url('https://cdn.example.com/fonts/site.woff2') format('woff2'); }
@@ -164,6 +96,67 @@ func TestRewriteCSSURLsUsesDownloadedAssets(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rewriteCSSURLs() output missing %q; got %s", want, got)
+		}
+	}
+}
+
+// <picture><source srcset> is the standard responsive-image pattern. Discovery
+// previously handled srcset only on <img>, so these assets were never
+// downloaded even though the rewrite walk was ready to localise them.
+func TestFindAllAssetURLsDiscoversPictureSourceSrcset(t *testing.T) {
+	doc := parseScraperDocument(t, `
+		<picture>
+		  <source srcset="/img/wide.png 1x, /img/wide@2x.png 2x" media="(min-width: 800px)">
+		  <img src="/img/fallback.png" srcset="/img/small.png 1x">
+		</picture>`)
+	base, err := url.Parse("https://example.com/page")
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+
+	_, _, binaryURLs := findAllAssetURLs(doc, base)
+
+	got := make(map[string]bool, len(binaryURLs))
+	for _, u := range binaryURLs {
+		got[u] = true
+	}
+
+	for _, want := range []string{
+		"https://example.com/img/wide.png",
+		"https://example.com/img/wide@2x.png",
+		"https://example.com/img/fallback.png",
+		"https://example.com/img/small.png",
+	} {
+		if !got[want] {
+			t.Errorf("findAllAssetURLs() did not discover %s; got %v", want, binaryURLs)
+		}
+	}
+}
+
+func TestRewriteHTMLPathsLocalizesPictureSourceSrcset(t *testing.T) {
+	doc := parseScraperDocument(t, `
+		<picture>
+		  <source srcset="/img/wide.png 1x, /img/wide@2x.png 2x">
+		  <img src="/img/fallback.png">
+		</picture>`)
+	base, err := url.Parse("https://example.com/page")
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+
+	rewriteHTMLPaths(doc, map[string]string{
+		"https://example.com/img/wide.png":     "assets/wide.png",
+		"https://example.com/img/wide@2x.png":  "assets/wide-2x.png",
+		"https://example.com/img/fallback.png": "assets/fallback.png",
+	}, base)
+
+	got := renderScraperDocument(t, doc)
+	for _, want := range []string{
+		`srcset="assets/wide.png 1x, assets/wide-2x.png 2x"`,
+		`src="assets/fallback.png"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rewriteHTMLPaths() output missing %q; got %s", want, got)
 		}
 	}
 }

@@ -93,4 +93,16 @@ site/
 
 .runs/
 pipeline.config.json
+
+# Non-core: scaffolding around the product, not the product itself.
+# The tracked tree is the Go source (main.go, cmd/, internal/), the browser UI
+# in dist/, and the build/deploy config at the root. Everything below is local
+# working material.
 docs/
+
+# QA apparatus: feature/test/defect model, generated workbook, test harnesses.
+qa/
+
+# Build and tooling output
+.testbin/
+.gotmp-codex/

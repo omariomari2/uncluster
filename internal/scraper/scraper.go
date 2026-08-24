@@ -6,6 +6,7 @@ import (
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/fetcher"
 	"github.com/omariomari2/uncluster/internal/formatter"
+	"github.com/omariomari2/uncluster/internal/htmlutil"
 	"github.com/omariomari2/uncluster/internal/safehttp"
 	"log"
 	"net/http"
@@ -111,14 +112,9 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 	// Rewrite src/href in the document to local relative paths
 	rewriteHTMLPaths(doc, urlToLocal, base)
 
-	// Extract inline <style> and <script> tags (reuse extractor logic)
-	var cssContent strings.Builder
-	var jsContent strings.Builder
-	var inlineCSS []extractor.InlineResource
-	var inlineJS []extractor.InlineResource
-	cssIndex := 0
-	jsIndex := 0
-	extractInlineResources(doc, &cssContent, &jsContent, &inlineCSS, &inlineJS, &cssIndex, &jsIndex)
+	// Extract inline <style> and <script> tags, sharing the upload path's logic.
+	var inline htmlutil.InlineCollector
+	inline.Walk(doc)
 
 	// Render the final HTML
 	var buf bytes.Buffer
@@ -133,10 +129,10 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 
 	return &extractor.ExtractedContent{
 		HTML:        formattedHTML,
-		CSS:         cssContent.String(),
-		JS:          jsContent.String(),
-		InlineCSS:   inlineCSS,
-		InlineJS:    inlineJS,
+		CSS:         inline.CSS.String(),
+		JS:          inline.JS.String(),
+		InlineCSS:   inline.InlineCSS,
+		InlineJS:    inline.InlineJS,
 		ExternalCSS: externalCSS,
 		ExternalJS:  externalJS,
 		LocalAssets: localAssets,
@@ -171,103 +167,136 @@ func fetchPage(rawURL string) (string, error) {
 	return string(body), nil
 }
 
+// assetKind classifies where a discovered URL belongs in the export.
+type assetKind int
+
+const (
+	assetBinary assetKind = iota
+	assetCSS
+	assetJS
+	assetNone
+)
+
+// assetAttrs is the single description of which element attributes hold asset
+// URLs. Both findAllAssetURLs and rewriteHTMLPaths iterate it, so discovery and
+// rewriting cannot drift apart — a mismatch between the two is what caused
+// srcset assets to be downloaded but never referenced.
+//
+// <link> is deliberately absent: its classification depends on rel and as
+// rather than on the tag, so it is handled by linkKind instead.
+var assetAttrs = []struct {
+	tag    string
+	attr   string
+	kind   assetKind
+	srcset bool
+}{
+	{tag: "script", attr: "src", kind: assetJS},
+	{tag: "img", attr: "src", kind: assetBinary},
+	{tag: "img", attr: "srcset", kind: assetBinary, srcset: true},
+	{tag: "source", attr: "src", kind: assetBinary},
+	{tag: "source", attr: "srcset", kind: assetBinary, srcset: true},
+	{tag: "video", attr: "src", kind: assetBinary},
+	{tag: "video", attr: "poster", kind: assetBinary},
+	{tag: "audio", attr: "src", kind: assetBinary},
+}
+
+// walkElements visits every element node in the tree.
+func walkElements(n *html.Node, visit func(*html.Node)) {
+	if n.Type == html.ElementNode {
+		visit(n)
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		walkElements(c, visit)
+	}
+}
+
+// linkKind classifies a <link> by its rel and as attributes.
+func linkKind(n *html.Node, abs string) assetKind {
+	rel := strings.ToLower(htmlutil.GetAttr(n, "rel"))
+
+	switch {
+	case strings.Contains(rel, "stylesheet"):
+		// Catches "stylesheet", "preload stylesheet", etc.
+		if htmlutil.IsGoogleFonts(abs) {
+			return assetNone
+		}
+		return assetCSS
+	case rel == "modulepreload":
+		// JS module chunks
+		return assetJS
+	case strings.Contains(rel, "icon"):
+		// Catches "icon", "shortcut icon", "apple-touch-icon"
+		return assetBinary
+	case rel == "preload":
+		switch strings.ToLower(htmlutil.GetAttr(n, "as")) {
+		case "image", "font":
+			return assetBinary
+		case "script":
+			return assetJS
+		case "style":
+			if htmlutil.IsGoogleFonts(abs) {
+				return assetNone
+			}
+			return assetCSS
+		}
+	}
+	return assetNone
+}
+
 // findAllAssetURLs walks the HTML tree and collects absolute URLs for
 // CSS, JS, and binary assets (images, fonts, SVGs).
 func findAllAssetURLs(doc *html.Node, base *url.URL) (cssURLs, jsURLs, binaryURLs []string) {
-	cssSet := make(map[string]bool)
-	jsSet := make(map[string]bool)
-	binarySet := make(map[string]bool)
-
-	var walk func(n *html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			switch n.Data {
-			case "link":
-				rel := strings.ToLower(getAttr(n, "rel"))
-				href := getAttr(n, "href")
-				if href == "" {
-					break
-				}
-				abs := resolveURL(base, href)
-				if abs == "" {
-					break
-				}
-				switch {
-				case strings.Contains(rel, "stylesheet"):
-					// Catches "stylesheet", "preload stylesheet", etc.
-					if !isGoogleFonts(abs) {
-						cssSet[abs] = true
-					}
-				case rel == "modulepreload":
-					// JS module chunks
-					jsSet[abs] = true
-				case strings.Contains(rel, "icon"):
-					// Catches "icon", "shortcut icon", "apple-touch-icon"
-					binarySet[abs] = true
-				case rel == "preload":
-					as := strings.ToLower(getAttr(n, "as"))
-					switch as {
-					case "image", "font":
-						binarySet[abs] = true
-					case "script":
-						jsSet[abs] = true
-					case "style":
-						if !isGoogleFonts(abs) {
-							cssSet[abs] = true
-						}
-					}
-				}
-			case "script":
-				src := getAttr(n, "src")
-				if src != "" {
-					if abs := resolveURL(base, src); abs != "" {
-						jsSet[abs] = true
-					}
-				}
-			case "img":
-				if src := getAttr(n, "src"); src != "" {
-					if abs := resolveURL(base, src); abs != "" {
-						binarySet[abs] = true
-					}
-				}
-				// Handle srcset: "img.png 1x, img2x.png 2x"
-				if srcset := getAttr(n, "srcset"); srcset != "" {
-					for _, u := range parseSrcset(srcset, base) {
-						binarySet[u] = true
-					}
-				}
-			case "source":
-				if src := getAttr(n, "src"); src != "" {
-					if abs := resolveURL(base, src); abs != "" {
-						binarySet[abs] = true
-					}
-				}
-			case "video", "audio":
-				if src := getAttr(n, "src"); src != "" {
-					if abs := resolveURL(base, src); abs != "" {
-						binarySet[abs] = true
-					}
-				}
-				if poster := getAttr(n, "poster"); poster != "" {
-					if abs := resolveURL(base, poster); abs != "" {
-						binarySet[abs] = true
-					}
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
+	sets := map[assetKind]map[string]bool{
+		assetCSS:    {},
+		assetJS:     {},
+		assetBinary: {},
 	}
-	walk(doc)
 
-	for u := range cssSet {
+	add := func(kind assetKind, abs string) {
+		if abs == "" || kind == assetNone {
+			return
+		}
+		sets[kind][abs] = true
+	}
+
+	walkElements(doc, func(n *html.Node) {
+		if n.Data == "link" {
+			href := htmlutil.GetAttr(n, "href")
+			if href == "" {
+				return
+			}
+			if abs := resolveURL(base, href); abs != "" {
+				add(linkKind(n, abs), abs)
+			}
+			return
+		}
+
+		for _, ref := range assetAttrs {
+			if ref.tag != n.Data {
+				continue
+			}
+			val := htmlutil.GetAttr(n, ref.attr)
+			if val == "" {
+				continue
+			}
+			if ref.srcset {
+				// "img.png 1x, img2x.png 2x"
+				for _, u := range parseSrcset(val, base) {
+					add(ref.kind, u)
+				}
+				continue
+			}
+			add(ref.kind, resolveURL(base, val))
+		}
+	})
+
+	for u := range sets[assetCSS] {
 		cssURLs = append(cssURLs, u)
 	}
-	for u := range jsSet {
+	for u := range sets[assetJS] {
 		jsURLs = append(jsURLs, u)
 	}
-	for u := range binarySet {
+	for u := range sets[assetBinary] {
 		binaryURLs = append(binaryURLs, u)
 	}
 	return
@@ -362,35 +391,33 @@ func parseSrcset(srcset string, base *url.URL) []string {
 	return urls
 }
 
-// rewriteHTMLPaths updates src/href attributes in the document to use local paths.
+// rewriteHTMLPaths updates asset attributes in the document to use local paths.
 // It resolves relative attribute values against base before looking up in urlToLocal,
 // so both absolute and relative references are correctly rewritten.
+//
+// It walks the same assetAttrs table as findAllAssetURLs, so an attribute can
+// never be discovered without also being rewritten.
 func rewriteHTMLPaths(doc *html.Node, urlToLocal map[string]string, base *url.URL) {
-	var walk func(n *html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			switch n.Data {
-			case "link":
-				rewriteAttr(n, "href", urlToLocal, base)
-			case "script":
-				rewriteAttr(n, "src", urlToLocal, base)
-			case "img", "source", "video", "audio":
-				rewriteAttr(n, "src", urlToLocal, base)
-				rewriteAttr(n, "poster", urlToLocal, base)
-				if n.Data == "img" || n.Data == "source" {
-					rewriteSrcset(n, urlToLocal, base)
-				}
+	walkElements(doc, func(n *html.Node) {
+		if n.Data == "link" {
+			rewriteAttr(n, "href", urlToLocal, base)
+			return
+		}
+		for _, ref := range assetAttrs {
+			if ref.tag != n.Data {
+				continue
+			}
+			if ref.srcset {
+				rewriteSrcset(n, ref.attr, urlToLocal, base)
+			} else {
+				rewriteAttr(n, ref.attr, urlToLocal, base)
 			}
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
+	})
 }
 
-func rewriteSrcset(n *html.Node, urlToLocal map[string]string, base *url.URL) {
-	srcset := getAttr(n, "srcset")
+func rewriteSrcset(n *html.Node, attr string, urlToLocal map[string]string, base *url.URL) {
+	srcset := htmlutil.GetAttr(n, attr)
 	if srcset == "" {
 		return
 	}
@@ -412,143 +439,28 @@ func rewriteSrcset(n *html.Node, urlToLocal map[string]string, base *url.URL) {
 		candidates[i] = strings.Join(fields, " ")
 	}
 
-	setAttr(n, "srcset", strings.Join(candidates, ", "))
+	htmlutil.SetAttr(n, attr, strings.Join(candidates, ", "))
 }
 
 // rewriteAttr rewrites a single attribute on a node. It first tries a direct
 // lookup, then resolves to an absolute URL and retries, handling relative paths.
 func rewriteAttr(n *html.Node, attr string, urlToLocal map[string]string, base *url.URL) {
-	val := getAttr(n, attr)
+	val := htmlutil.GetAttr(n, attr)
 	if val == "" {
 		return
 	}
 	// Direct match (attribute already contains absolute URL)
 	if local, ok := urlToLocal[val]; ok {
-		setAttr(n, attr, local)
+		htmlutil.SetAttr(n, attr, local)
 		return
 	}
 	// Resolve relative to absolute and retry
 	abs := resolveURL(base, val)
 	if abs != "" {
 		if local, ok := urlToLocal[abs]; ok {
-			setAttr(n, attr, local)
+			htmlutil.SetAttr(n, attr, local)
 		}
 	}
-}
-
-// extractInlineResources extracts inline <style> and <script> blocks,
-// replacing them with file references. Mirrors the extractor package logic.
-func extractInlineResources(n *html.Node, cssContent, jsContent *strings.Builder, inlineCSS, inlineJS *[]extractor.InlineResource, cssIndex, jsIndex *int) {
-	if n.Type == html.ElementNode {
-		if n.Data == "style" {
-			content := collectTextContent(n)
-			if strings.TrimSpace(content) != "" {
-				*cssIndex++
-				filename := fmt.Sprintf("inline/style-%d.css", *cssIndex)
-				*inlineCSS = append(*inlineCSS, extractor.InlineResource{Path: filename, Content: content})
-				cssContent.WriteString(content)
-				if !strings.HasSuffix(content, "\n") {
-					cssContent.WriteString("\n")
-				}
-				link := &html.Node{
-					Type: html.ElementNode,
-					Data: "link",
-					Attr: []html.Attribute{
-						{Key: "rel", Val: "stylesheet"},
-						{Key: "href", Val: filename},
-					},
-				}
-				replaceNode(n, link)
-				return
-			}
-		} else if n.Data == "script" && !hasAttrKey(n, "src") && isJavaScriptType(getAttr(n, "type")) {
-			content := collectTextContent(n)
-			if strings.TrimSpace(content) != "" {
-				*jsIndex++
-				filename := fmt.Sprintf("inline/script-%d.js", *jsIndex)
-				*inlineJS = append(*inlineJS, extractor.InlineResource{Path: filename, Content: content})
-				jsContent.WriteString(content)
-				if !strings.HasSuffix(content, "\n") {
-					jsContent.WriteString("\n")
-				}
-				script := &html.Node{
-					Type: html.ElementNode,
-					Data: "script",
-					Attr: []html.Attribute{
-						{Key: "src", Val: filename},
-					},
-				}
-				replaceNode(n, script)
-				return
-			}
-		}
-	}
-
-	for c := n.FirstChild; c != nil; {
-		next := c.NextSibling
-		extractInlineResources(c, cssContent, jsContent, inlineCSS, inlineJS, cssIndex, jsIndex)
-		c = next
-	}
-}
-
-func isJavaScriptType(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "text/javascript", "application/javascript", "text/ecmascript",
-		"application/ecmascript", "application/x-javascript", "module":
-		return true
-	default:
-		return false
-	}
-}
-
-func collectTextContent(n *html.Node) string {
-	var sb strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.TextNode {
-			sb.WriteString(c.Data)
-		}
-	}
-	return sb.String()
-}
-
-func replaceNode(old, new *html.Node) {
-	if old.Parent == nil {
-		return
-	}
-	old.Parent.InsertBefore(new, old)
-	old.Parent.RemoveChild(old)
-}
-
-func getAttr(n *html.Node, key string) string {
-	for _, a := range n.Attr {
-		if strings.EqualFold(a.Key, key) {
-			return a.Val
-		}
-	}
-	return ""
-}
-
-func setAttr(n *html.Node, key, val string) {
-	for i, a := range n.Attr {
-		if strings.EqualFold(a.Key, key) {
-			n.Attr[i].Val = val
-			return
-		}
-	}
-	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: val})
-}
-
-func hasAttrKey(n *html.Node, key string) bool {
-	for _, a := range n.Attr {
-		if strings.EqualFold(a.Key, key) {
-			return true
-		}
-	}
-	return false
-}
-
-func isGoogleFonts(u string) bool {
-	return strings.Contains(u, "fonts.googleapis.com")
 }
 
 func deduplicateStrings(ss []string) []string {

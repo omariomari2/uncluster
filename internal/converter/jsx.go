@@ -230,7 +230,7 @@ func (c *JSXConverter) renderElementAsJSX(buf *strings.Builder, n *html.Node) {
 	buf.WriteString(n.Data)
 
 	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr)
+		key, val := c.convertAttribute(attr, nil)
 		if key != "" && val != "" {
 			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
 		}
@@ -252,7 +252,12 @@ func (c *JSXConverter) renderElementAsJSX(buf *strings.Builder, n *html.Node) {
 	buf.WriteString(">")
 }
 
-func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
+// convertAttribute converts one HTML attribute into a JSX name/value pair.
+//
+// fieldSubs may be nil. When set, an attribute value that exactly matches one of
+// its keys is emitted as the corresponding JS expression instead of a literal,
+// which is how list items reference their own data.
+func (c *JSXConverter) convertAttribute(attr html.Attribute, fieldSubs map[string]string) (string, string) {
 	key := attr.Key
 	val := attr.Val
 
@@ -265,6 +270,10 @@ func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
 		return "", ""
 	}
 
+	// Checked against the HTML name, before jsxAttributeMap renames the likes of
+	// autoplay → autoPlay.
+	isBoolean := jsxBooleanAttributes[strings.ToLower(key)]
+
 	if jsxKey, ok := jsxAttributeMap[key]; ok {
 		key = jsxKey
 	}
@@ -275,11 +284,16 @@ func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
 	}
 
 	if key == "style" {
-		return "style", c.convertStyleToObject(val)
+		return "style", c.convertStyle(val, fieldSubs)
 	}
 
-	if key == "checked" || key == "disabled" || key == "selected" {
+	// Presence alone means true: disabled="false" is still disabled in HTML.
+	if isBoolean {
 		return key, "{true}"
+	}
+
+	if ref, ok := fieldSubs[val]; ok {
+		return key, "{" + ref + "}"
 	}
 
 	return key, fmt.Sprintf(`"%s"`, escapeJSXAttribute(val))
@@ -302,6 +316,43 @@ var jsxTextEscaper = strings.NewReplacer(
 	"}", "&#125;",
 )
 
+// Style values land inside a single-quoted JS string literal, so only the
+// backslash and the quote itself need escaping. NewReplacer does not rescan its
+// own output, so these two rules cannot compound.
+var jsxStyleValueEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`'`, `\'`,
+)
+
+// jsxBooleanAttributes lists HTML attributes whose mere presence means true.
+// Keyed by HTML name, so look up before applying jsxAttributeMap.
+var jsxBooleanAttributes = map[string]bool{
+	"allowfullscreen": true,
+	"async":           true,
+	"autofocus":       true,
+	"autoplay":        true,
+	"checked":         true,
+	"controls":        true,
+	"default":         true,
+	"defer":           true,
+	"disabled":        true,
+	"formnovalidate":  true,
+	"hidden":          true,
+	"inert":           true,
+	"ismap":           true,
+	"itemscope":       true,
+	"loop":            true,
+	"multiple":        true,
+	"muted":           true,
+	"novalidate":      true,
+	"open":            true,
+	"playsinline":     true,
+	"readonly":        true,
+	"required":        true,
+	"reversed":        true,
+	"selected":        true,
+}
+
 func escapeJSXAttribute(value string) string {
 	return jsxAttributeEscaper.Replace(value)
 }
@@ -310,11 +361,19 @@ func escapeJSXText(value string) string {
 	return jsxTextEscaper.Replace(value)
 }
 
-func (c *JSXConverter) convertStyleToObject(style string) string {
-	styles := strings.Split(style, ";")
+func escapeJSXStyleValue(value string) string {
+	return jsxStyleValueEscaper.Replace(value)
+}
+
+// convertStyle converts a CSS declaration list into a JSX style object literal,
+// including the outer braces: style={{color: 'red'}}.
+//
+// fieldSubs may be nil. When set, a declaration whose value matches one of its
+// keys is emitted as a bare JS expression rather than a quoted literal.
+func (c *JSXConverter) convertStyle(style string, fieldSubs map[string]string) string {
 	var jsxStyles []string
 
-	for _, s := range styles {
+	for _, s := range strings.Split(style, ";") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -325,13 +384,43 @@ func (c *JSXConverter) convertStyleToObject(style string) string {
 			continue
 		}
 
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		key = c.kebabToCamel(key)
-		jsxStyles = append(jsxStyles, fmt.Sprintf("%s: '%s'", key, value))
+		cssKey := strings.TrimSpace(parts[0])
+		cssVal := strings.TrimSpace(parts[1])
+		camelKey := c.kebabToCamel(cssKey)
+
+		if ref, ok := backgroundImageRef(cssKey, cssVal, fieldSubs); ok {
+			jsxStyles = append(jsxStyles, camelKey+": `url(${"+ref+"})`")
+			continue
+		}
+
+		if ref, ok := fieldSubs[cssVal]; ok {
+			jsxStyles = append(jsxStyles, camelKey+": "+ref)
+			continue
+		}
+
+		jsxStyles = append(jsxStyles, fmt.Sprintf("%s: '%s'", camelKey, escapeJSXStyleValue(cssVal)))
 	}
 
 	return fmt.Sprintf("{{%s}}", strings.Join(jsxStyles, ", "))
+}
+
+// backgroundImageRef reports the field reference for a background-image whose
+// url(...) target is a substitutable value.
+func backgroundImageRef(cssKey, cssVal string, fieldSubs map[string]string) (string, bool) {
+	if cssKey != "background-image" || len(fieldSubs) == 0 {
+		return "", false
+	}
+	start := strings.Index(cssVal, "url(")
+	if start < 0 {
+		return "", false
+	}
+	rest := strings.TrimLeft(cssVal[start+4:], "'\" ")
+	end := strings.IndexAny(rest, "'\")")
+	if end <= 0 {
+		return "", false
+	}
+	ref, ok := fieldSubs[rest[:end]]
+	return ref, ok
 }
 
 func (c *JSXConverter) kebabToCamel(s string) string {
@@ -628,7 +717,7 @@ func (c *JSXConverter) renderChildrenInline(buf *strings.Builder, n *html.Node) 
 		case html.TextNode:
 			t := normalizeInlineText(child.Data)
 			if t != "" {
-				buf.WriteString(t)
+				buf.WriteString(escapeJSXText(t))
 			}
 		case html.ElementNode:
 			if skipElements[child.Data] {
@@ -636,7 +725,7 @@ func (c *JSXConverter) renderChildrenInline(buf *strings.Builder, n *html.Node) 
 			}
 			buf.WriteString("<" + child.Data)
 			for _, attr := range child.Attr {
-				key, val := c.convertAttribute(attr)
+				key, val := c.convertAttribute(attr, nil)
 				if key != "" && val != "" {
 					buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
 				}
@@ -671,7 +760,7 @@ func (c *JSXConverter) renderElementIndented(buf *strings.Builder, n *html.Node,
 	buf.WriteString(indent + "<" + n.Data)
 
 	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr)
+		key, val := c.convertAttribute(attr, nil)
 		if key != "" && val != "" {
 			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
 		}
@@ -1139,7 +1228,7 @@ func (c *JSXConverter) renderWithListMap(
 	indent := strings.Repeat("  ", depth)
 	buf.WriteString(indent + "<" + n.Data)
 	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr)
+		key, val := c.convertAttribute(attr, nil)
 		if key != "" && val != "" {
 			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
 		}
@@ -1189,7 +1278,7 @@ func (c *JSXConverter) renderElemWithSubs(buf *strings.Builder, n *html.Node, de
 	buf.WriteString(indent + "<" + n.Data)
 
 	for _, attr := range n.Attr {
-		key, val := c.convertAttrWithSubs(attr, fieldSubs)
+		key, val := c.convertAttribute(attr, fieldSubs)
 		if key != "" && val != "" {
 			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
 		}
@@ -1222,7 +1311,7 @@ func (c *JSXConverter) renderElemWithSubs(buf *strings.Builder, n *html.Node, de
 		if ref, ok := fieldSubs[text]; ok {
 			buf.WriteString(">{" + ref + "}</" + n.Data + ">\n")
 		} else {
-			buf.WriteString(">" + text + "</" + n.Data + ">\n")
+			buf.WriteString(">" + escapeJSXText(text) + "</" + n.Data + ">\n")
 		}
 	}
 }
@@ -1240,88 +1329,7 @@ func (c *JSXConverter) renderNodeWithSubs(buf *strings.Builder, n *html.Node, de
 		if ref, ok := fieldSubs[trimmed]; ok {
 			buf.WriteString(indent + "{" + ref + "}\n")
 		} else {
-			buf.WriteString(indent + trimmed + "\n")
+			buf.WriteString(indent + escapeJSXText(trimmed) + "\n")
 		}
 	}
-}
-
-// convertAttrWithSubs converts an attribute, substituting known field values.
-func (c *JSXConverter) convertAttrWithSubs(attr html.Attribute, fieldSubs map[string]string) (string, string) {
-	key := attr.Key
-	rawVal := attr.Val
-
-	if jsxKey, ok := jsxAttributeMap[key]; ok {
-		key = jsxKey
-	}
-
-	if jsxEvent, ok := jsxEventMap[key]; ok {
-		return jsxEvent, fmt.Sprintf("{() => { %s }}", rawVal)
-	}
-
-	if key == "style" {
-		return "style", c.convertStyleWithSubs(rawVal, fieldSubs)
-	}
-
-	if key == "checked" || key == "disabled" || key == "selected" {
-		if rawVal == key || rawVal == "true" {
-			return key, "{true}"
-		}
-		return key, "{false}"
-	}
-
-	if ref, ok := fieldSubs[rawVal]; ok {
-		return key, "{" + ref + "}"
-	}
-
-	return key, fmt.Sprintf(`"%s"`, rawVal)
-}
-
-// convertStyleWithSubs converts a CSS style string, substituting field values.
-func (c *JSXConverter) convertStyleWithSubs(style string, fieldSubs map[string]string) string {
-	styles := strings.Split(style, ";")
-	var jsxStyles []string
-
-	for _, s := range styles {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		parts := strings.SplitN(s, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		cssKey := strings.TrimSpace(parts[0])
-		cssVal := strings.TrimSpace(parts[1])
-		camelKey := c.kebabToCamel(cssKey)
-
-		if cssKey == "background-image" {
-			start := strings.Index(cssVal, "url(")
-			if start >= 0 {
-				rest := cssVal[start+4:]
-				rest = strings.TrimLeft(rest, "'\" ")
-				end := strings.IndexAny(rest, "'\")")
-				if end > 0 {
-					urlVal := rest[:end]
-					if _, ok := fieldSubs[urlVal]; ok {
-						jsxStyles = append(jsxStyles, camelKey+": `url(${item.backgroundImage})`")
-						continue
-					}
-				}
-			}
-		}
-
-		substituted := false
-		for origVal, ref := range fieldSubs {
-			if cssVal == origVal {
-				jsxStyles = append(jsxStyles, fmt.Sprintf("%s: {%s}", camelKey, ref))
-				substituted = true
-				break
-			}
-		}
-		if !substituted {
-			jsxStyles = append(jsxStyles, fmt.Sprintf("%s: '%s'", camelKey, cssVal))
-		}
-	}
-
-	return fmt.Sprintf("{%s}", strings.Join(jsxStyles, ", "))
 }
