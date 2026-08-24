@@ -9,13 +9,12 @@ import (
 )
 
 type ProjectConfig struct {
-	ProjectName    string
-	PackageManager string
-	HTML           string
-	CSS            string
-	JS             string
-	ExternalCSS    []fetcher.FetchedResource
-	ExternalJS     []fetcher.FetchedResource
+	ProjectName string
+	HTML        string
+	CSS         string
+	JS          string
+	ExternalCSS []fetcher.FetchedResource
+	ExternalJS  []fetcher.FetchedResource
 }
 
 type ProjectFiles struct {
@@ -105,7 +104,9 @@ func organizeSourceFiles(config *ProjectConfig, files map[string]string) {
 	sectionFiles, mainComponent, mainTsx, err := generateTSXViews(
 		config.HTML,
 		config.CSS,
+		config.JS,
 		config.ExternalCSS,
+		config.ExternalJS,
 	)
 	if err != nil {
 		log.Printf("⚠️ Failed to generate TSX views: %v", err)
@@ -132,16 +133,23 @@ export default MainComponent
 	if config.CSS != "" {
 		files["src/styles/main.css"] = config.CSS
 	}
+	if strings.TrimSpace(config.JS) != "" {
+		files["public/scripts/main.js"] = config.JS
+	}
 
 	for _, css := range config.ExternalCSS {
 		if css.Error == nil && css.Content != "" {
-			files["src/styles/external/"+css.Filename] = css.Content
+			files["src/styles/external/"+css.Filename] = cssForPublicAssets(css.Content)
 		}
 	}
 
 	for _, js := range config.ExternalJS {
 		if js.Error == nil && js.Content != "" {
-			files["src/scripts/external/"+js.Filename] = js.Content
+			files["public/scripts/external/"+js.Filename] = js.Content
 		}
 	}
+}
+
+func cssForPublicAssets(content string) string {
+	return strings.ReplaceAll(content, "../../assets/", "/assets/")
 }

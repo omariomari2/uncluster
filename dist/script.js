@@ -2,10 +2,23 @@
 const THEME_KEY = 'theme';
 
 function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem(THEME_KEY, theme);
+    const normalizedTheme = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', normalizedTheme);
+    try {
+        localStorage.setItem(THEME_KEY, normalizedTheme);
+    } catch (error) {
+        // Theme selection still applies when storage is disabled or unavailable.
+    }
     const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = theme === 'light' ? '☾ Dark' : '☀ Light';
+    if (btn) btn.textContent = normalizedTheme === 'light' ? '☾ Dark' : '☀ Light';
+}
+
+function loadTheme() {
+    try {
+        return localStorage.getItem(THEME_KEY) || 'dark';
+    } catch (error) {
+        return 'dark';
+    }
 }
 
 function toggleTheme() {
@@ -269,10 +282,10 @@ function setInputMode(mode) {
 function showActionButtons() {
     const actionButtons = [
         document.querySelector('.button.first'),
-        document.querySelector('.button.sec'),
         document.querySelector('.button.third'),
         document.querySelector('.button.fourth'),
     ];
+    const formatButton = document.querySelector('.button.sec');
     const bundleButton = document.querySelector('.button.fifth');
 
     actionButtons.forEach(button => {
@@ -280,6 +293,9 @@ function showActionButtons() {
             button.classList.add('button-visible');
         }
     });
+    if (formatButton) {
+        formatButton.classList.toggle('button-visible', !scrapeMode);
+    }
     if (bundleButton) bundleButton.classList.remove('button-visible');
 }
 
@@ -322,6 +338,9 @@ function initializeButtonStates() {
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    toast.setAttribute('aria-atomic', 'true');
     toast.style.cssText = `
         position: fixed;
         bottom: 20px;
@@ -564,8 +583,8 @@ async function scrapeAndExport(exportType) {
             : defaultName;
 
         const nameInputIds = { zip: 'download-name-zip', nodejs: 'download-name-tsx', ejs: 'download-name-ejs' };
-        const filename = resolveDownloadName(nameInputIds[exportType], defaultName, '.zip');
-        const result = await downloadBlob(blob, filename || serverFilename, PICKER_TYPES.zip);
+        const filename = resolveDownloadName(nameInputIds[exportType], serverFilename, '.zip');
+        const result = await downloadBlob(blob, filename, PICKER_TYPES.zip);
         if (result !== 'canceled') {
             showToast('Scraped and exported successfully!', 'success');
         }
@@ -653,7 +672,7 @@ async function bundleZip() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+    applyTheme(loadTheme());
     initializeButtonStates();
     initializeDownloadSettings();
 

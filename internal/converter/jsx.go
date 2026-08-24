@@ -2,7 +2,6 @@ package converter
 
 import (
 	"fmt"
-	"github.com/omariomari2/uncluster/internal/analyzer"
 	"github.com/omariomari2/uncluster/internal/fetcher"
 	"strings"
 
@@ -99,46 +98,46 @@ var jsxAttributeMap = map[string]string{
 	"inputmode":       "inputMode",
 	"usemap":          "useMap",
 	// SVG presentation
-	"fill-rule":                    "fillRule",
-	"clip-rule":                    "clipRule",
-	"clip-path":                    "clipPath",
-	"stroke-width":                 "strokeWidth",
-	"stroke-linecap":               "strokeLinecap",
-	"stroke-linejoin":              "strokeLinejoin",
-	"stroke-miterlimit":            "strokeMiterlimit",
-	"stroke-dasharray":             "strokeDasharray",
-	"stroke-dashoffset":            "strokeDashoffset",
-	"fill-opacity":                 "fillOpacity",
-	"stroke-opacity":               "strokeOpacity",
-	"text-anchor":                  "textAnchor",
-	"font-family":                  "fontFamily",
-	"font-size":                    "fontSize",
-	"font-weight":                  "fontWeight",
-	"font-style":                   "fontStyle",
-	"text-decoration":              "textDecoration",
-	"letter-spacing":               "letterSpacing",
-	"word-spacing":                 "wordSpacing",
-	"dominant-baseline":            "dominantBaseline",
-	"alignment-baseline":           "alignmentBaseline",
-	"baseline-shift":               "baselineShift",
-	"vector-effect":                "vectorEffect",
-	"paint-order":                  "paintOrder",
-	"shape-rendering":              "shapeRendering",
-	"image-rendering":              "imageRendering",
-	"color-rendering":              "colorRendering",
-	"color-interpolation":          "colorInterpolation",
-	"color-interpolation-filters":  "colorInterpolationFilters",
-	"flood-color":                  "floodColor",
-	"flood-opacity":                "floodOpacity",
-	"lighting-color":               "lightingColor",
-	"writing-mode":                 "writingMode",
-	"pointer-events":               "pointerEvents",
-	"unicode-bidi":                 "unicodeBidi",
-	"stop-color":                   "stopColor",
-	"stop-opacity":                 "stopOpacity",
-	"marker-start":                 "markerStart",
-	"marker-mid":                   "markerMid",
-	"marker-end":                   "markerEnd",
+	"fill-rule":                   "fillRule",
+	"clip-rule":                   "clipRule",
+	"clip-path":                   "clipPath",
+	"stroke-width":                "strokeWidth",
+	"stroke-linecap":              "strokeLinecap",
+	"stroke-linejoin":             "strokeLinejoin",
+	"stroke-miterlimit":           "strokeMiterlimit",
+	"stroke-dasharray":            "strokeDasharray",
+	"stroke-dashoffset":           "strokeDashoffset",
+	"fill-opacity":                "fillOpacity",
+	"stroke-opacity":              "strokeOpacity",
+	"text-anchor":                 "textAnchor",
+	"font-family":                 "fontFamily",
+	"font-size":                   "fontSize",
+	"font-weight":                 "fontWeight",
+	"font-style":                  "fontStyle",
+	"text-decoration":             "textDecoration",
+	"letter-spacing":              "letterSpacing",
+	"word-spacing":                "wordSpacing",
+	"dominant-baseline":           "dominantBaseline",
+	"alignment-baseline":          "alignmentBaseline",
+	"baseline-shift":              "baselineShift",
+	"vector-effect":               "vectorEffect",
+	"paint-order":                 "paintOrder",
+	"shape-rendering":             "shapeRendering",
+	"image-rendering":             "imageRendering",
+	"color-rendering":             "colorRendering",
+	"color-interpolation":         "colorInterpolation",
+	"color-interpolation-filters": "colorInterpolationFilters",
+	"flood-color":                 "floodColor",
+	"flood-opacity":               "floodOpacity",
+	"lighting-color":              "lightingColor",
+	"writing-mode":                "writingMode",
+	"pointer-events":              "pointerEvents",
+	"unicode-bidi":                "unicodeBidi",
+	"stop-color":                  "stopColor",
+	"stop-opacity":                "stopOpacity",
+	"marker-start":                "markerStart",
+	"marker-mid":                  "markerMid",
+	"marker-end":                  "markerEnd",
 	// SVG structural — html.Parse lowercases camelCase attrs
 	"viewbox":             "viewBox",
 	"preserveaspectratio": "preserveAspectRatio",
@@ -259,7 +258,7 @@ func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
 
 	// xlink:href (deprecated but common in SVGs) → href
 	if attr.Namespace == "xlink" && key == "href" {
-		return "href", fmt.Sprintf(`"%s"`, val)
+		return "href", fmt.Sprintf(`"%s"`, escapeJSXAttribute(val))
 	}
 	// Drop namespace attributes that React doesn't need
 	if attr.Namespace != "" {
@@ -280,13 +279,35 @@ func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
 	}
 
 	if key == "checked" || key == "disabled" || key == "selected" {
-		if val == key || val == "true" {
-			return key, "{true}"
-		}
-		return key, "{false}"
+		return key, "{true}"
 	}
 
-	return key, fmt.Sprintf(`"%s"`, val)
+	return key, fmt.Sprintf(`"%s"`, escapeJSXAttribute(val))
+}
+
+var jsxAttributeEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"\"", "&quot;",
+	"<", "&lt;",
+	">", "&gt;",
+	"{", "&#123;",
+	"}", "&#125;",
+)
+
+var jsxTextEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	"{", "&#123;",
+	"}", "&#125;",
+)
+
+func escapeJSXAttribute(value string) string {
+	return jsxAttributeEscaper.Replace(value)
+}
+
+func escapeJSXText(value string) string {
+	return jsxTextEscaper.Replace(value)
 }
 
 func (c *JSXConverter) convertStyleToObject(style string) string {
@@ -310,7 +331,7 @@ func (c *JSXConverter) convertStyleToObject(style string) string {
 		jsxStyles = append(jsxStyles, fmt.Sprintf("%s: '%s'", key, value))
 	}
 
-	return fmt.Sprintf("{%s}", strings.Join(jsxStyles, ", "))
+	return fmt.Sprintf("{{%s}}", strings.Join(jsxStyles, ", "))
 }
 
 func (c *JSXConverter) kebabToCamel(s string) string {
@@ -336,9 +357,9 @@ func (c *JSXConverter) renderTextAsJSX(buf *strings.Builder, n *html.Node) {
 		text = convertHTMLCommentsInText(text)
 	}
 
-	trimmed := strings.TrimSpace(text)
-	if trimmed != "" {
-		buf.WriteString(trimmed)
+	normalized := normalizeInlineText(text)
+	if normalized != "" {
+		buf.WriteString(escapeJSXText(normalized))
 	}
 }
 
@@ -1303,51 +1324,4 @@ func (c *JSXConverter) convertStyleWithSubs(style string, fieldSubs map[string]s
 	}
 
 	return fmt.Sprintf("{%s}", strings.Join(jsxStyles, ", "))
-}
-
-func AnalyzeAndConvert(html string) ([]string, error) {
-	suggestions, err := analyzer.AnalyzeComponents(html)
-	if err != nil {
-		return nil, fmt.Errorf("failed to analyze HTML: %w", err)
-	}
-
-	var components []string
-
-	for _, suggestion := range suggestions {
-		componentName := suggestion.Name
-		componentName = strings.Title(strings.ReplaceAll(componentName, "-", " "))
-		componentName = strings.ReplaceAll(componentName, " ", "")
-
-		if suggestion.JSXCode != "" {
-			component := fmt.Sprintf(`import React from 'react'
-
-%s`, suggestion.JSXCode)
-			components = append(components, component)
-			continue
-		}
-
-		jsx := fmt.Sprintf(`<div className="%s">
-  {/* %s */}
-</div>`, suggestion.TagName, suggestion.Description)
-
-		component := fmt.Sprintf(`import React from 'react'
-
-interface %sProps {
-}
-
-function %s(props: %sProps) {
-  return (
-    <>
-      %s
-    </>
-  )
-}
-
-export default %s
-`, componentName, componentName, componentName, jsx, componentName)
-
-		components = append(components, component)
-	}
-
-	return components, nil
 }

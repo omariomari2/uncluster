@@ -2,12 +2,13 @@ package fetcher
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/omariomari2/uncluster/internal/safehttp"
 )
 
 type FetchedResource struct {
@@ -22,47 +23,7 @@ type FetchedResource struct {
 // Used for binary assets such as images, fonts, and SVGs.
 // A 30-second timeout is used to accommodate slower CDNs.
 func FetchRaw(rawURL string) (content []byte, mimeType string, err error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
-	}
-
-	req, err := http.NewRequest("GET", rawURL, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to read body: %w", err)
-	}
-
-	ct := resp.Header.Get("Content-Type")
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
-	// Strip parameters like charset
-	if idx := strings.Index(ct, ";"); idx != -1 {
-		ct = strings.TrimSpace(ct[:idx])
-	}
-
-	return data, ct, nil
+	return fetchResource(safehttp.Client(30*time.Second), rawURL)
 }
 
 func FetchExternalResources(urls []string, resourceType string) []FetchedResource {
@@ -70,52 +31,13 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 		return []FetchedResource{}
 	}
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
-	}
+	client := safehttp.Client(10 * time.Second)
 
 	var results []FetchedResource
 	usedFilenames := make(map[string]int)
 
 	for _, resourceURL := range urls {
-		req, reqErr := http.NewRequest("GET", resourceURL, nil)
-		if reqErr != nil {
-			results = append(results, FetchedResource{
-				URL:   resourceURL,
-				Type:  resourceType,
-				Error: reqErr,
-			})
-			continue
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-		resp, err := client.Do(req)
-		if err != nil {
-			results = append(results, FetchedResource{
-				URL:   resourceURL,
-				Type:  resourceType,
-				Error: err,
-			})
-			continue
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			err := fmt.Errorf("HTTP %d", resp.StatusCode)
-			results = append(results, FetchedResource{
-				URL:   resourceURL,
-				Type:  resourceType,
-				Error: err,
-			})
-			continue
-		}
-
-		content, err := io.ReadAll(resp.Body)
+		content, _, err := fetchResource(client, resourceURL)
 		if err != nil {
 			results = append(results, FetchedResource{
 				URL:   resourceURL,
@@ -140,10 +62,50 @@ func FetchExternalResources(urls []string, resourceType string) []FetchedResourc
 	return results
 }
 
+func fetchResource(client *http.Client, rawURL string) (content []byte, mimeType string, err error) {
+	if err := safehttp.ValidateURL(rawURL); err != nil {
+		return nil, "", err
+	}
+
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("User-Agent", safehttp.BrowserUserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	data, err := safehttp.ReadBody(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read body: %w", err)
+	}
+
+	return data, responseMIME(resp), nil
+}
+
+func responseMIME(resp *http.Response) string {
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		return "application/octet-stream"
+	}
+	if idx := strings.Index(contentType, ";"); idx != -1 {
+		return strings.TrimSpace(contentType[:idx])
+	}
+	return contentType
+}
+
 func generateSafeFilename(resourceURL, resourceType string, usedFilenames map[string]int) string {
 	parsedURL, err := url.Parse(resourceURL)
 	if err != nil {
-		return fmt.Sprintf("external-%d.%s", len(usedFilenames), getExtension(resourceType))
+		return fmt.Sprintf("external-%d%s", len(usedFilenames), getExtension(resourceType))
 	}
 
 	filename := generateDescriptiveFilename(parsedURL, resourceType)
@@ -160,6 +122,11 @@ func generateSafeFilename(resourceURL, resourceType string, usedFilenames map[st
 	}
 
 	return filename
+}
+
+var ignoredPathSegments = map[string]bool{
+	"dist": true, "min": true, "css": true, "js": true,
+	"npm": true, "ajax": true, "libs": true, "assets": true,
 }
 
 func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string {
@@ -180,16 +147,18 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 	pathParts := strings.Split(strings.Trim(path, "/"), "/")
 	var meaningfulParts []string
 
-	for _, part := range pathParts {
-		if part == "" || part == "dist" || part == "min" ||
-			strings.HasPrefix(part, "v") ||
-			strings.Contains(part, "@") ||
-			part == "css" || part == "js" {
+	for i, part := range pathParts {
+		if part == "" || ignoredPathSegments[part] || strings.Contains(part, "@") {
 			continue
 		}
 
-		if len(part) > 0 && !isVersionNumber(part) {
-			meaningfulParts = append(meaningfulParts, part)
+		isFinalSegment := i == len(pathParts)-1
+		if !isFinalSegment && isVersionNumber(part) {
+			continue
+		}
+
+		if base := stripResourceExtension(part); base != "" {
+			meaningfulParts = append(meaningfulParts, base)
 		}
 	}
 
@@ -211,27 +180,35 @@ func generateDescriptiveFilename(parsedURL *url.URL, resourceType string) string
 		filename = "script-" + filename
 	}
 
-	if !strings.Contains(filename, ".") {
-		filename += getExtension(resourceType)
+	ext := getExtension(resourceType)
+	if !strings.HasSuffix(filename, ext) {
+		filename += ext
 	}
 
 	return filename
 }
 
+func stripResourceExtension(part string) string {
+	part = strings.TrimSuffix(part, filepath.Ext(part))
+	return strings.TrimSuffix(part, ".min")
+}
+
 func isVersionNumber(s string) bool {
-	if strings.HasPrefix(s, "v") && len(s) > 1 {
+	if s == "" {
+		return false
+	}
+
+	if len(s) > 1 && (s[0] == 'v' || s[0] == 'V') && s[1] >= '0' && s[1] <= '9' {
 		return true
 	}
 
-	if strings.Count(s, ".") >= 1 {
-		return true
+	for _, r := range s {
+		if (r < '0' || r > '9') && r != '.' {
+			return false
+		}
 	}
 
-	if len(s) == 1 && s >= "0" && s <= "9" {
-		return true
-	}
-
-	return false
+	return true
 }
 
 func getExtension(resourceType string) string {

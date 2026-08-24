@@ -154,25 +154,8 @@ func kebabToCamel(s string) string {
 func generateSuggestionsWithoutAI(patterns map[string]*ElementPattern) []ComponentSuggestion {
 	var suggestions []ComponentSuggestion
 
-	obviousPatterns := map[string]bool{
-		"card": true, "button": true, "btn": true,
-		"nav-item": true, "menu-item": true, "list-item": true,
-		"modal": true, "dialog": true, "popup": true,
-		"form-field": true, "input-group": true,
-		"tab": true, "accordion": true, "dropdown": true,
-		"badge": true, "tag": true, "chip": true,
-		"avatar": true, "thumbnail": true,
-		"alert": true, "toast": true, "notification": true,
-	}
-
-	structuralElements := map[string]bool{
-		"html": true, "head": true, "body": true, "title": true,
-		"meta": true, "link": true, "script": true, "style": true,
-		"base": true, "noscript": true,
-	}
-
 	for patternKey, pattern := range patterns {
-		if structuralElements[pattern.TagName] {
+		if isStructuralElement(pattern.TagName) {
 			continue
 		}
 
@@ -181,10 +164,6 @@ func generateSuggestionsWithoutAI(patterns map[string]*ElementPattern) []Compone
 		}
 
 		if pattern.Count < 3 {
-			continue
-		}
-
-		if isStructuralElement(pattern.TagName) {
 			continue
 		}
 
@@ -216,23 +195,48 @@ func generateSuggestionsWithoutAI(patterns map[string]*ElementPattern) []Compone
 	return suggestions
 }
 
+var obviousPatterns = map[string]bool{
+	"card": true, "button": true, "btn": true,
+	"nav-item": true, "menu-item": true, "list-item": true,
+	"modal": true, "dialog": true, "popup": true,
+	"form-field": true, "input-group": true,
+	"tab": true, "accordion": true, "dropdown": true,
+	"badge": true, "tag": true, "chip": true,
+	"avatar": true, "thumbnail": true,
+	"alert": true, "toast": true, "notification": true,
+}
+
+var structuralElements = map[string]bool{
+	"html": true, "head": true, "body": true, "title": true,
+	"meta": true, "link": true, "script": true, "style": true,
+	"base": true, "noscript": true,
+	"div": true, "span": true, "section": true, "article": true,
+	"header": true, "footer": true, "main": true, "aside": true,
+	"p": true, "a": true, "ul": true, "ol": true, "li": true,
+}
+
+var patternKeySeparators = strings.NewReplacer(".", "-", "#", "-", "_", "-", " ", "-")
+
 func matchesObviousPattern(patternKey string, patterns map[string]bool) bool {
-	lowerKey := strings.ToLower(patternKey)
+	normalized := normalizePatternKey(patternKey)
 	for pattern := range patterns {
-		if strings.Contains(lowerKey, pattern) {
+		if strings.Contains(normalized, normalizePatternKey(pattern)) {
 			return true
 		}
 	}
 	return false
 }
 
-func isStructuralElement(tagName string) bool {
-	structural := map[string]bool{
-		"div": true, "span": true, "section": true, "article": true,
-		"header": true, "footer": true, "main": true, "aside": true,
-		"p": true, "a": true, "ul": true, "ol": true, "li": true,
+func normalizePatternKey(key string) string {
+	normalized := patternKeySeparators.Replace(strings.ToLower(key))
+	for strings.Contains(normalized, "--") {
+		normalized = strings.ReplaceAll(normalized, "--", "-")
 	}
-	return structural[tagName]
+	return "-" + strings.Trim(normalized, "-") + "-"
+}
+
+func isStructuralElement(tagName string) bool {
+	return structuralElements[tagName]
 }
 
 func generateComponentName(tagName, patternKey string) string {
@@ -320,110 +324,6 @@ func generateJSXCode(pattern *ElementPattern) string {
 	buf.WriteString("\t);\n")
 	buf.WriteString("};\n\n")
 	buf.WriteString("export default " + generateComponentName(pattern.TagName, generatePatternKey(example)) + ";")
-
-	return buf.String()
-}
-
-func nodeToHTML(n *html.Node) string {
-	var buf strings.Builder
-	renderNode(&buf, n)
-	return buf.String()
-}
-
-func renderNode(buf *strings.Builder, n *html.Node) {
-	if n == nil {
-		return
-	}
-
-	switch n.Type {
-	case html.ElementNode:
-		buf.WriteString("<")
-		buf.WriteString(n.Data)
-
-		for _, attr := range n.Attr {
-			buf.WriteString(" ")
-			buf.WriteString(attr.Key)
-			if attr.Val != "" {
-				buf.WriteString(`="`)
-				buf.WriteString(attr.Val)
-				buf.WriteString(`"`)
-			}
-		}
-
-		if isVoidElement(n.Data) {
-			buf.WriteString(" />")
-			return
-		}
-
-		buf.WriteString(">")
-
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			renderNode(buf, c)
-		}
-
-		buf.WriteString("</")
-		buf.WriteString(n.Data)
-		buf.WriteString(">")
-
-	case html.TextNode:
-		buf.WriteString(n.Data)
-	}
-}
-
-func isVoidElement(tagName string) bool {
-	voidElements := map[string]bool{
-		"area": true, "base": true, "br": true, "col": true, "embed": true,
-		"hr": true, "img": true, "input": true, "link": true, "meta": true,
-		"param": true, "source": true, "track": true, "wbr": true,
-	}
-	return voidElements[strings.ToLower(tagName)]
-}
-
-func generateJSXCodeWithName(pattern *ElementPattern, componentName string) string {
-	if len(pattern.Examples) == 0 {
-		return ""
-	}
-
-	var buf strings.Builder
-
-	buf.WriteString(fmt.Sprintf("const %s = ({ ", componentName))
-
-	props := []string{}
-	propMap := make(map[string]string)
-	for attr, count := range pattern.Attributes {
-		if count >= pattern.Count/2 {
-			propName := convertToValidPropName(attr)
-			props = append(props, propName)
-			propMap[attr] = propName
-		}
-	}
-
-	if len(props) > 0 {
-		buf.WriteString(strings.Join(props, ", "))
-	}
-
-	buf.WriteString(" }) => {\n")
-	buf.WriteString("\treturn (\n")
-
-	buf.WriteString(fmt.Sprintf("\t\t<%s", pattern.TagName))
-
-	for attr, count := range pattern.Attributes {
-		if count >= pattern.Count/2 {
-			propName := propMap[attr]
-			jsxAttr := attr
-			if attr == "class" {
-				jsxAttr = "className"
-			}
-			buf.WriteString(fmt.Sprintf(" %s={%s}", jsxAttr, propName))
-		}
-	}
-
-	buf.WriteString(">\n")
-	buf.WriteString("\t\t\t\n")
-	buf.WriteString(fmt.Sprintf("\t\t</%s>\n", pattern.TagName))
-	buf.WriteString("\t);\n")
-	buf.WriteString("};\n\n")
-	buf.WriteString("export default " + componentName + ";")
 
 	return buf.String()
 }

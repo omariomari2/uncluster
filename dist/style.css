@@ -82,6 +82,12 @@ nav {
 
 .dropdown-trigger {
   cursor: pointer;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
 }
 
 .dropdown-content {
@@ -363,7 +369,7 @@ nav {
   transition: opacity 0.5s ease, visibility 0.5s ease;
 }
 
-button:not(.theme-btn):not(.mode-btn) {
+button:not(.theme-btn):not(.mode-btn):not(.dropdown-trigger) {
   height: 50px;
   width: 160px;
   clip-path: path("M 0 25 C 0 -5, -5 0, 80 0 S 160 -5, 160 25, 165 50 80 50, 0 55, 0 25");
@@ -727,6 +733,10 @@ span {
   position: relative;
   transform: none;
   flex-shrink: 0;
+  width: 100px;
+}
+
+.scrape-input-area .button.scrape-btn > button {
   width: 100px;
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/omariomari2/uncluster/internal/analyzer"
 	"github.com/omariomari2/uncluster/internal/bundle"
@@ -78,6 +79,27 @@ type ComponentResponse struct {
 	Success     bool                           `json:"success"`
 	Suggestions []analyzer.ComponentSuggestion `json:"suggestions,omitempty"`
 	Error       string                         `json:"error,omitempty"`
+}
+
+func sendZip(c *fiber.Ctx, filename string, zipData []byte) error {
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", sanitizeAttachmentName(filename)))
+	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
+	return c.Send(zipData)
+}
+
+func sanitizeAttachmentName(name string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == '"' || r == '\\' || r == '/' {
+			return -1
+		}
+		return r
+	}, name)
+
+	if cleaned == "" {
+		return "download.zip"
+	}
+	return cleaned
 }
 
 func setupRoutes(app *fiber.App) {
@@ -228,11 +250,7 @@ func handleExport(c *fiber.Ctx) error {
 		})
 	}
 
-	c.Set("Content-Type", "application/zip")
-	c.Set("Content-Disposition", "attachment; filename=\"extracted.zip\"")
-	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-
-	return c.Send(zipData)
+	return sendZip(c, "extracted.zip", zipData)
 }
 
 func handleExportNodeJS(c *fiber.Ctx) error {
@@ -264,13 +282,12 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
 
 	config := &nodejs.ProjectConfig{
-		ProjectName:    projectName,
-		PackageManager: "npm",
-		HTML:           rewrittenHTML,
-		CSS:            extracted.CSS,
-		JS:             extracted.JS,
-		ExternalCSS:    extracted.ExternalCSS,
-		ExternalJS:     extracted.ExternalJS,
+		ProjectName: projectName,
+		HTML:        rewrittenHTML,
+		CSS:         extracted.CSS,
+		JS:          extracted.JS,
+		ExternalCSS: extracted.ExternalCSS,
+		ExternalJS:  extracted.ExternalJS,
 	}
 
 	projectFiles, err := nodejs.GenerateProject(config)
@@ -289,11 +306,7 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 		})
 	}
 
-	c.Set("Content-Type", "application/zip")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", projectName))
-	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-
-	return c.Send(zipData)
+	return sendZip(c, projectName+".zip", zipData)
 }
 
 func handleExportNodeJSEJS(c *fiber.Ctx) error {
@@ -349,11 +362,7 @@ func handleExportNodeJSEJS(c *fiber.Ctx) error {
 		})
 	}
 
-	c.Set("Content-Type", "application/zip")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-ejs.zip\"", projectName))
-	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-
-	return c.Send(zipData)
+	return sendZip(c, projectName+"-ejs.zip", zipData)
 }
 
 type ScrapeRequest struct {
@@ -379,10 +388,7 @@ func handleScrape(c *fiber.Ctx) error {
 		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
 
-	c.Set("Content-Type", "application/zip")
-	c.Set("Content-Disposition", "attachment; filename=\"extracted.zip\"")
-	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-	return c.Send(zipData)
+	return sendZip(c, "extracted.zip", zipData)
 }
 
 func handleScrapeNodeJS(c *fiber.Ctx) error {
@@ -403,13 +409,12 @@ func handleScrapeNodeJS(c *fiber.Ctx) error {
 	projectName := fmt.Sprintf("project-%d", time.Now().Unix())
 
 	config := &nodejs.ProjectConfig{
-		ProjectName:    projectName,
-		PackageManager: "npm",
-		HTML:           rewrittenHTML,
-		CSS:            extracted.CSS,
-		JS:             extracted.JS,
-		ExternalCSS:    extracted.ExternalCSS,
-		ExternalJS:     extracted.ExternalJS,
+		ProjectName: projectName,
+		HTML:        rewrittenHTML,
+		CSS:         extracted.CSS,
+		JS:          extracted.JS,
+		ExternalCSS: extracted.ExternalCSS,
+		ExternalJS:  extracted.ExternalJS,
 	}
 
 	projectFiles, err := nodejs.GenerateProject(config)
@@ -427,10 +432,7 @@ func handleScrapeNodeJS(c *fiber.Ctx) error {
 		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
 
-	c.Set("Content-Type", "application/zip")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", projectName))
-	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-	return c.Send(zipData)
+	return sendZip(c, projectName+".zip", zipData)
 }
 
 func handleScrapeNodeJSEJS(c *fiber.Ctx) error {
@@ -474,10 +476,7 @@ func handleScrapeNodeJSEJS(c *fiber.Ctx) error {
 		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
 
-	c.Set("Content-Type", "application/zip")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-ejs.zip\"", projectName))
-	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-	return c.Send(zipData)
+	return sendZip(c, projectName+"-ejs.zip", zipData)
 }
 
 func handleBundleZip(c *fiber.Ctx) error {
@@ -550,17 +549,26 @@ func handleBundleZip(c *fiber.Ctx) error {
 		return c.Status(500).JSON(Response{Success: false, Error: "Failed to finalize archive"})
 	}
 
-	zipData := buf.Bytes()
-	c.Set("Content-Type", "application/zip")
-	c.Set("Content-Disposition", "attachment; filename=\"bundle.zip\"")
-	c.Set("Content-Length", fmt.Sprintf("%d", len(zipData)))
-	return c.Send(zipData)
+	return sendZip(c, "bundle.zip", buf.Bytes())
 }
 
 func handleHealth(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"status":  "healthy",
-		"service": "htmlfmt-api",
-		"version": "1.0.0",
+		"status":   "healthy",
+		"service":  "uncluster-api",
+		"revision": buildRevision(),
 	})
+}
+
+func buildRevision() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			return setting.Value
+		}
+	}
+	return "unknown"
 }

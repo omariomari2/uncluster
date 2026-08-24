@@ -56,6 +56,8 @@ type indexCandidate struct {
 	matchScore int
 }
 
+const maxExtractedBytes = 512 << 20
+
 var cssURLPattern = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)`)
 
 func Process(inputPath, outputBase string) (*Result, error) {
@@ -186,6 +188,8 @@ func extractZip(zipPath, destDir string) error {
 		return fmt.Errorf("resolve temp extraction path: %w", err)
 	}
 
+	var extractedBytes int64
+
 	for _, file := range reader.File {
 		target := filepath.Join(destAbs, filepath.Clean(file.Name))
 		targetAbs, err := filepath.Abs(target)
@@ -207,11 +211,16 @@ func extractZip(zipPath, destDir string) error {
 			return fmt.Errorf("create ZIP entry directory %q: %w", file.Name, err)
 		}
 
+		remaining := maxExtractedBytes - extractedBytes
+		if remaining <= 0 {
+			return fmt.Errorf("ZIP contents exceed the %d byte extraction limit", maxExtractedBytes)
+		}
+
 		src, err := file.Open()
 		if err != nil {
 			return fmt.Errorf("open ZIP entry %q: %w", file.Name, err)
 		}
-		data, readErr := io.ReadAll(src)
+		data, readErr := io.ReadAll(io.LimitReader(src, remaining+1))
 		closeErr := src.Close()
 		if readErr != nil {
 			return fmt.Errorf("read ZIP entry %q: %w", file.Name, readErr)
@@ -219,6 +228,11 @@ func extractZip(zipPath, destDir string) error {
 		if closeErr != nil {
 			return fmt.Errorf("close ZIP entry %q: %w", file.Name, closeErr)
 		}
+		if int64(len(data)) > remaining {
+			return fmt.Errorf("ZIP contents exceed the %d byte extraction limit", maxExtractedBytes)
+		}
+		extractedBytes += int64(len(data))
+
 		if err := os.WriteFile(targetAbs, data, file.FileInfo().Mode()); err != nil {
 			return fmt.Errorf("write ZIP entry %q: %w", file.Name, err)
 		}

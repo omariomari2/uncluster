@@ -362,7 +362,7 @@ This project includes the following external resources that were automatically d
 {{if .ExternalJS}}
 ### JavaScript Files
 {{range .ExternalJS}}
-- ` + "`" + `src/scripts/external/{{.Filename}}` + "`" + ` ({{.URL}})
+- ` + "`" + `public/scripts/external/{{.Filename}}` + "`" + ` ({{.URL}})
 {{end}}
 {{end}}
 

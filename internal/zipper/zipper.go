@@ -3,9 +3,11 @@ package zipper
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
+	"io"
+
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/fetcher"
-	"io"
 )
 
 func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineResource, externalCSS, externalJS []fetcher.FetchedResource, localAssets []extractor.LocalAsset) ([]byte, error) {
@@ -13,97 +15,71 @@ func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineRe
 	writer := zip.NewWriter(&buf)
 
 	if html != "" {
-		htmlFile, err := writer.Create("index.html")
-		if err != nil {
-			return nil, err
-		}
-		_, err = io.WriteString(htmlFile, html)
-		if err != nil {
+		if err := writeEntry(writer, "index.html", []byte(html)); err != nil {
 			return nil, err
 		}
 	}
 
-	if len(inlineCSS) > 0 {
-		for _, resource := range inlineCSS {
-			if resource.Content == "" {
-				continue
-			}
-			cssFile, err := writer.Create(resource.Path)
-			if err != nil {
-				continue
-			}
-			_, err = io.WriteString(cssFile, resource.Content)
-			if err != nil {
-				continue
-			}
+	if err := writeInlineResources(writer, inlineCSS); err != nil {
+		return nil, err
+	}
+	if err := writeInlineResources(writer, inlineJS); err != nil {
+		return nil, err
+	}
+	if err := writeFetchedResources(writer, "external/css/", externalCSS); err != nil {
+		return nil, err
+	}
+	if err := writeFetchedResources(writer, "external/js/", externalJS); err != nil {
+		return nil, err
+	}
+
+	for _, asset := range localAssets {
+		if len(asset.Content) == 0 {
+			continue
+		}
+		if err := writeEntry(writer, asset.Path, asset.Content); err != nil {
+			return nil, err
 		}
 	}
 
-	if len(inlineJS) > 0 {
-		for _, resource := range inlineJS {
-			if resource.Content == "" {
-				continue
-			}
-			jsFile, err := writer.Create(resource.Path)
-			if err != nil {
-				continue
-			}
-			_, err = io.WriteString(jsFile, resource.Content)
-			if err != nil {
-				continue
-			}
-		}
-	}
-
-	if len(externalCSS) > 0 {
-		for _, resource := range externalCSS {
-			if resource.Error == nil && resource.Content != "" {
-				path := "external/css/" + resource.Filename
-				cssFile, err := writer.Create(path)
-				if err != nil {
-					continue
-				}
-				_, err = io.WriteString(cssFile, resource.Content)
-				if err != nil {
-					continue
-				}
-			}
-		}
-	}
-
-	if len(externalJS) > 0 {
-		for _, resource := range externalJS {
-			if resource.Error == nil && resource.Content != "" {
-				path := "external/js/" + resource.Filename
-				jsFile, err := writer.Create(path)
-				if err != nil {
-					continue
-				}
-				_, err = io.WriteString(jsFile, resource.Content)
-				if err != nil {
-					continue
-				}
-			}
-		}
-	}
-
-	if len(localAssets) > 0 {
-		for _, asset := range localAssets {
-			if len(asset.Content) == 0 {
-				continue
-			}
-			f, err := writer.Create(asset.Path)
-			if err != nil {
-				continue
-			}
-			f.Write(asset.Content)
-		}
-	}
-
-	err := writer.Close()
-	if err != nil {
+	if err := writer.Close(); err != nil {
 		return nil, err
 	}
 
 	return buf.Bytes(), nil
+}
+
+func writeInlineResources(writer *zip.Writer, resources []extractor.InlineResource) error {
+	for _, resource := range resources {
+		if resource.Content == "" {
+			continue
+		}
+		if err := writeEntry(writer, resource.Path, []byte(resource.Content)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeFetchedResources(writer *zip.Writer, dir string, resources []fetcher.FetchedResource) error {
+	for _, resource := range resources {
+		if resource.Error != nil || resource.Content == "" {
+			continue
+		}
+		if err := writeEntry(writer, dir+resource.Filename, []byte(resource.Content)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeEntry(writer *zip.Writer, path string, content []byte) error {
+	entry, err := writer.Create(path)
+	if err != nil {
+		return fmt.Errorf("create ZIP entry %q: %w", path, err)
+	}
+	if _, err := io.Copy(entry, bytes.NewReader(content)); err != nil {
+		return fmt.Errorf("write ZIP entry %q: %w", path, err)
+	}
+	return nil
 }

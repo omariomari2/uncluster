@@ -6,11 +6,12 @@ import (
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/fetcher"
 	"github.com/omariomari2/uncluster/internal/formatter"
-	"io"
+	"github.com/omariomari2/uncluster/internal/safehttp"
 	"log"
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -23,9 +24,13 @@ var cssURLRegex = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)`)
 // ScrapeURL fetches a webpage and all its referenced assets (CSS, JS, images,
 // fonts, SVGs) and returns an ExtractedContent ready for the export pipeline.
 func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
+	if err := safehttp.ValidateURL(rawURL); err != nil {
+		return nil, err
+	}
+
 	base, err := url.Parse(rawURL)
-	if err != nil || (base.Scheme != "http" && base.Scheme != "https") {
-		return nil, fmt.Errorf("invalid URL: must start with http:// or https://")
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
 	pageHTML, err := fetchPage(rawURL)
@@ -90,6 +95,19 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 		})
 	}
 
+	for i := range externalCSS {
+		if externalCSS[i].Error != nil {
+			continue
+		}
+		localCSSPath := "external/css/" + externalCSS[i].Filename
+		externalCSS[i].Content = rewriteCSSURLs(
+			externalCSS[i].Content,
+			externalCSS[i].URL,
+			localCSSPath,
+			urlToLocal,
+		)
+	}
+
 	// Rewrite src/href in the document to local relative paths
 	rewriteHTMLPaths(doc, urlToLocal, base)
 
@@ -127,21 +145,13 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 
 // fetchPage downloads the HTML content of a URL with a browser User-Agent.
 func fetchPage(rawURL string) (string, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
-	}
+	client := safehttp.Client(30 * time.Second)
 
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", safehttp.BrowserUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	resp, err := client.Do(req)
@@ -154,7 +164,7 @@ func fetchPage(rawURL string) (string, error) {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := safehttp.ReadBody(resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -308,6 +318,36 @@ func extractCSSURLs(cssContent, cssBaseURL string) []string {
 	return result
 }
 
+// rewriteCSSURLs replaces downloaded url(...) dependencies with paths that are
+// relative to the downloaded stylesheet's location in the exported archive.
+func rewriteCSSURLs(cssContent, cssBaseURL, cssLocalPath string, urlToLocal map[string]string) string {
+	cssBase, err := url.Parse(cssBaseURL)
+	if err != nil {
+		return cssContent
+	}
+
+	cssDir := filepath.Dir(filepath.FromSlash(cssLocalPath))
+	return cssURLRegex.ReplaceAllStringFunc(cssContent, func(match string) string {
+		parts := cssURLRegex.FindStringSubmatch(match)
+		if len(parts) < 2 {
+			return match
+		}
+
+		absolute := resolveURL(cssBase, parts[1])
+		localPath, ok := urlToLocal[absolute]
+		if absolute == "" || !ok {
+			return match
+		}
+
+		relative, err := filepath.Rel(cssDir, filepath.FromSlash(localPath))
+		if err != nil {
+			return match
+		}
+		relative = filepath.ToSlash(relative)
+		return strings.Replace(match, parts[1], relative, 1)
+	})
+}
+
 // parseSrcset splits a srcset attribute and returns absolute URLs.
 func parseSrcset(srcset string, base *url.URL) []string {
 	var urls []string
@@ -337,6 +377,9 @@ func rewriteHTMLPaths(doc *html.Node, urlToLocal map[string]string, base *url.UR
 			case "img", "source", "video", "audio":
 				rewriteAttr(n, "src", urlToLocal, base)
 				rewriteAttr(n, "poster", urlToLocal, base)
+				if n.Data == "img" || n.Data == "source" {
+					rewriteSrcset(n, urlToLocal, base)
+				}
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -344,6 +387,32 @@ func rewriteHTMLPaths(doc *html.Node, urlToLocal map[string]string, base *url.UR
 		}
 	}
 	walk(doc)
+}
+
+func rewriteSrcset(n *html.Node, urlToLocal map[string]string, base *url.URL) {
+	srcset := getAttr(n, "srcset")
+	if srcset == "" {
+		return
+	}
+
+	candidates := strings.Split(srcset, ",")
+	for i, candidate := range candidates {
+		fields := strings.Fields(strings.TrimSpace(candidate))
+		if len(fields) == 0 {
+			continue
+		}
+
+		if local, ok := urlToLocal[fields[0]]; ok {
+			fields[0] = local
+		} else if absolute := resolveURL(base, fields[0]); absolute != "" {
+			if local, ok := urlToLocal[absolute]; ok {
+				fields[0] = local
+			}
+		}
+		candidates[i] = strings.Join(fields, " ")
+	}
+
+	setAttr(n, "srcset", strings.Join(candidates, ", "))
 }
 
 // rewriteAttr rewrites a single attribute on a node. It first tries a direct
@@ -355,14 +424,14 @@ func rewriteAttr(n *html.Node, attr string, urlToLocal map[string]string, base *
 	}
 	// Direct match (attribute already contains absolute URL)
 	if local, ok := urlToLocal[val]; ok {
-		setAttr(n, attr, "/"+local)
+		setAttr(n, attr, local)
 		return
 	}
 	// Resolve relative to absolute and retry
 	abs := resolveURL(base, val)
 	if abs != "" {
 		if local, ok := urlToLocal[abs]; ok {
-			setAttr(n, attr, "/"+local)
+			setAttr(n, attr, local)
 		}
 	}
 }
@@ -386,13 +455,13 @@ func extractInlineResources(n *html.Node, cssContent, jsContent *strings.Builder
 					Data: "link",
 					Attr: []html.Attribute{
 						{Key: "rel", Val: "stylesheet"},
-						{Key: "href", Val: "/" + filename},
+						{Key: "href", Val: filename},
 					},
 				}
 				replaceNode(n, link)
 				return
 			}
-		} else if n.Data == "script" && !hasAttrKey(n, "src") {
+		} else if n.Data == "script" && !hasAttrKey(n, "src") && isJavaScriptType(getAttr(n, "type")) {
 			content := collectTextContent(n)
 			if strings.TrimSpace(content) != "" {
 				*jsIndex++
@@ -406,7 +475,7 @@ func extractInlineResources(n *html.Node, cssContent, jsContent *strings.Builder
 					Type: html.ElementNode,
 					Data: "script",
 					Attr: []html.Attribute{
-						{Key: "src", Val: "/" + filename},
+						{Key: "src", Val: filename},
 					},
 				}
 				replaceNode(n, script)
@@ -419,6 +488,16 @@ func extractInlineResources(n *html.Node, cssContent, jsContent *strings.Builder
 		next := c.NextSibling
 		extractInlineResources(c, cssContent, jsContent, inlineCSS, inlineJS, cssIndex, jsIndex)
 		c = next
+	}
+}
+
+func isJavaScriptType(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "text/javascript", "application/javascript", "text/ecmascript",
+		"application/ecmascript", "application/x-javascript", "module":
+		return true
+	default:
+		return false
 	}
 }
 

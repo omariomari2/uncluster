@@ -69,7 +69,7 @@ func GenerateEJSProject(config *EJSProjectConfig) (*ProjectFiles, error) {
 
 	for _, css := range config.ExternalCSS {
 		if css.Error == nil && strings.TrimSpace(css.Content) != "" {
-			files["public/external/css/"+css.Filename] = css.Content
+			files["public/external/css/"+css.Filename] = cssForPublicAssets(css.Content)
 		}
 	}
 
@@ -269,7 +269,7 @@ func isWrapperElement(n *html.Node) bool {
 				return true
 			}
 		}
-		return true
+		return classAttr == "" && idAttr == ""
 	default:
 		return false
 	}
@@ -476,19 +476,6 @@ func nodeDepth(n *html.Node) int {
 		depth++
 	}
 	return depth
-}
-
-func uniqueNodes(nodes []*html.Node) []*html.Node {
-	seen := make(map[*html.Node]bool, len(nodes))
-	unique := make([]*html.Node, 0, len(nodes))
-	for _, node := range nodes {
-		if node == nil || seen[node] {
-			continue
-		}
-		seen[node] = true
-		unique = append(unique, node)
-	}
-	return unique
 }
 
 func buildIncludeReplacements(components []ejsComponent, prefix string) map[string]string {

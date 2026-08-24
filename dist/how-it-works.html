@@ -996,8 +996,10 @@ graph LR
     <p class="section-label">API Reference</p>
     <h2 class="section-title">Endpoints</h2>
     <p class="section-desc">
-      All endpoints accept JSON with an <code>html</code> field. Export endpoints return a binary
-      ZIP. The server includes CORS, request logging, and panic recovery middleware.
+      HTML transformation endpoints accept JSON with an <code>{ html: string }</code> field;
+      scrape endpoints accept <code>{ url: string }</code>. ZIP bundling accepts
+      <code>multipart/form-data</code> with a <code>file</code> field. Export, scrape, and bundle
+      endpoints return a binary ZIP. The server includes CORS, request logging, and panic recovery middleware.
     </p>
 
     <table class="api-table">
@@ -1047,10 +1049,34 @@ graph LR
           <td>ZIP — full Express + EJS project</td>
         </tr>
         <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/bundle-zip</code></td>
+          <td><code>multipart/form-data (file: ZIP)</code></td>
+          <td>ZIP — project bundle generated from an uploaded ZIP</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/scrape</code></td>
+          <td><code>{ url: string }</code></td>
+          <td>ZIP — localized HTML and downloaded resources</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/scrape-nodejs</code></td>
+          <td><code>{ url: string }</code></td>
+          <td>ZIP — localized Express + Vite + TS project</td>
+        </tr>
+        <tr>
+          <td class="m-post">POST</td>
+          <td><code>/api/scrape-nodejs-ejs</code></td>
+          <td><code>{ url: string }</code></td>
+          <td>ZIP — localized Express + EJS project</td>
+        </tr>
+        <tr>
           <td class="m-get">GET</td>
           <td><code>/api/health</code></td>
           <td>—</td>
-          <td><code>{ status, service, version }</code></td>
+          <td><code>{ status, service, revision }</code></td>
         </tr>
       </tbody>
     </table>

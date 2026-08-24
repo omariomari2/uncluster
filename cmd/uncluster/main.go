@@ -335,13 +335,12 @@ func runNodeJS(htmlContent, outDir string) {
 	projectName := filepath.Base(outDir)
 
 	config := &nodejs.ProjectConfig{
-		ProjectName:    projectName,
-		PackageManager: "npm",
-		HTML:           rewrittenHTML,
-		CSS:            extracted.CSS,
-		JS:             extracted.JS,
-		ExternalCSS:    extracted.ExternalCSS,
-		ExternalJS:     extracted.ExternalJS,
+		ProjectName: projectName,
+		HTML:        rewrittenHTML,
+		CSS:         extracted.CSS,
+		JS:          extracted.JS,
+		ExternalCSS: extracted.ExternalCSS,
+		ExternalJS:  extracted.ExternalJS,
 	}
 
 	projectFiles, err := nodejs.GenerateProject(config)
