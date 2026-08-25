@@ -34,8 +34,19 @@ app.set('views', path.join(__dirname, 'views'))
 
 app.use(express.static(path.join(__dirname, 'public')))
 
-app.get('*', (req, res) => {
+// Only extensionless paths fall through to the page. A request for a file that
+// does not exist has to 404: rendering HTML for it would return 200 with the
+// wrong content type, so a missing stylesheet or script would fail silently in
+// the browser instead of showing up.
+app.get('*', (req, res, next) => {
+  if (path.extname(req.path)) {
+    return next()
+  }
   res.render('index')
+})
+
+app.use((req, res) => {
+  res.status(404).type('text/plain').send('Not found: ' + req.path)
 })
 
 app.listen(PORT, () => {
