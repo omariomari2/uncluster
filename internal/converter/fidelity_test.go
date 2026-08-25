@@ -245,9 +245,19 @@ func normalizeTree(t *testing.T, n *html.Node) string {
 }
 
 func writeNormalized(b *strings.Builder, n *html.Node) {
+	writeNormalizedIn(b, n, false)
+}
+
+// writeNormalizedIn renders n. Inside a whitespace-preserving element every
+// space, tab and newline is significant, so text is compared byte for byte
+// rather than collapsed.
+func writeNormalizedIn(b *strings.Builder, n *html.Node, preserve bool) {
 	switch n.Type {
 	case html.TextNode:
-		text := collapseSpace(n.Data)
+		text := n.Data
+		if !preserve {
+			text = collapseSpace(text)
+		}
 		if text != "" {
 			b.WriteString("#text(" + text + ")")
 		}
@@ -267,10 +277,13 @@ func writeNormalized(b *strings.Builder, n *html.Node) {
 			}
 			b.WriteString(">")
 		}
+		if preserveWhitespaceElements[n.Data] {
+			preserve = true
+		}
 	}
 
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		writeNormalized(b, c)
+		writeNormalizedIn(b, c, preserve)
 	}
 
 	if n.Type == html.ElementNode && n.Data != "body" {

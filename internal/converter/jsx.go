@@ -149,6 +149,12 @@ var voidElements = map[string]bool{
 	"link": true, "meta": true, "source": true, "track": true, "wbr": true,
 }
 
+// preserveWhitespaceElements hold content where every space, tab and newline is
+// significant and must survive conversion untouched.
+var preserveWhitespaceElements = map[string]bool{
+	"pre": true, "textarea": true,
+}
+
 var skipElements = map[string]bool{
 	"html": true, "head": true, "body": true,
 	"title": true, "meta": true, "link": true,
@@ -549,6 +555,15 @@ func (c *JSXConverter) renderElementIndented(buf *strings.Builder, n *html.Node,
 		return
 	}
 
+	// Inside <pre> and <textarea> every byte of whitespace is significant, so
+	// the content is emitted verbatim with no collapsing or re-indentation.
+	if preserveWhitespaceElements[n.Data] {
+		buf.WriteString(">")
+		c.renderChildrenVerbatim(buf, n)
+		buf.WriteString("</" + n.Data + ">\n")
+		return
+	}
+
 	if hasElemChild(n) {
 		if isInlineContent(n) {
 			// Mixed text + inline elements: keep on one line
@@ -605,4 +620,34 @@ func nonSkippedChildren(n *html.Node) []*html.Node {
 		}
 	}
 	return result
+}
+
+// renderChildrenVerbatim emits children without adding indentation or
+// collapsing whitespace. Used for elements whose content is whitespace
+// significant, where any reformatting is itself a fidelity bug.
+func (c *JSXConverter) renderChildrenVerbatim(buf *strings.Builder, n *html.Node) {
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		switch child.Type {
+		case html.TextNode:
+			buf.WriteString(escapeJSXText(child.Data))
+		case html.ElementNode:
+			if skipElements[child.Data] {
+				continue
+			}
+			buf.WriteString("<" + child.Data)
+			for _, attr := range child.Attr {
+				key, val := c.convertAttribute(attr)
+				if key != "" && val != "" {
+					buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
+				}
+			}
+			if voidElements[child.Data] {
+				buf.WriteString(" />")
+				continue
+			}
+			buf.WriteString(">")
+			c.renderChildrenVerbatim(buf, child)
+			buf.WriteString("</" + child.Data + ">")
+		}
+	}
 }
