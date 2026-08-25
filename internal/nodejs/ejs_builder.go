@@ -300,12 +300,52 @@ func selectComponentNodes(root *html.Node) []*html.Node {
 
 func filterComponentCandidates(nodes []*html.Node) []*html.Node {
 	var filtered []*html.Node
-	for _, node := range nodes {
+	for _, node := range expandLayoutContainers(nodes, 0) {
 		if isComponentCandidate(node) {
 			filtered = append(filtered, node)
 		}
 	}
 	return filtered
+}
+
+// maxLayoutExpansion caps how far the walk descends through nested layout
+// wrappers before treating what it finds as components.
+const maxLayoutExpansion = 2
+
+// expandLayoutContainers replaces elements that merely group other regions with
+// the regions themselves. Without this a page whose content sits inside <main>
+// yields a single Main component holding the entire page.
+func expandLayoutContainers(nodes []*html.Node, depth int) []*html.Node {
+	if depth >= maxLayoutExpansion {
+		return nodes
+	}
+
+	var out []*html.Node
+	for _, node := range nodes {
+		children := contentChildren(node)
+		if len(children) > 1 && isLayoutContainer(node) {
+			out = append(out, expandLayoutContainers(children, depth+1)...)
+			continue
+		}
+		out = append(out, node)
+	}
+	return out
+}
+
+// isLayoutContainer reports whether an element exists to position other regions
+// rather than to be one. <main> always qualifies; a <div> only when it carries
+// no identity of its own or is named like a wrapper.
+func isLayoutContainer(n *html.Node) bool {
+	if n.Type != html.ElementNode {
+		return false
+	}
+	if n.Data == "main" {
+		return true
+	}
+	if n.Data != "div" {
+		return false
+	}
+	return isWrapperElement(n)
 }
 
 func collectSectionComponents(root *html.Node, maxDepth int) []*html.Node {
@@ -363,19 +403,17 @@ func isSectionBoundary(n *html.Node) bool {
 	return false
 }
 
-func buildComponentName(n *html.Node, index int, used map[string]int) string {
-	base := n.Data
-	if id := getAttributeValue(n, "id"); id != "" {
-		base += "-" + id
-	} else if classAttr := getAttributeValue(n, "class"); classAttr != "" {
-		if firstClass := strings.Fields(classAttr); len(firstClass) > 0 {
-			base += "-" + firstClass[0]
-		}
-	}
+// semanticLandmarks name their own region, so they are a usable component name
+// when no id or class offers a better one.
+var semanticLandmarks = map[string]bool{
+	"header": true, "footer": true, "nav": true, "aside": true,
+	"article": true, "section": true, "form": true, "main": true,
+}
 
-	base = sanitizeComponentName(base)
+func buildComponentName(n *html.Node, index int, used map[string]int) string {
+	base := sanitizeComponentName(componentBaseName(n, index))
 	if base == "" {
-		base = fmt.Sprintf("component-%d", index+1)
+		base = fmt.Sprintf("block-%d", index+1)
 	}
 
 	if count, ok := used[base]; ok {
@@ -387,6 +425,52 @@ func buildComponentName(n *html.Node, index int, used map[string]int) string {
 	}
 
 	return base
+}
+
+// componentBaseName picks the most meaningful identifier available. The element
+// tag is deliberately not prefixed: <footer class="site-footer"> should be
+// SiteFooter, not FooterSiteFooter.
+func componentBaseName(n *html.Node, index int) string {
+	if id := getAttributeValue(n, "id"); strings.TrimSpace(id) != "" {
+		return id
+	}
+	if cls := descriptiveClass(getAttributeValue(n, "class")); cls != "" {
+		return cls
+	}
+	if semanticLandmarks[n.Data] {
+		return n.Data
+	}
+	return fmt.Sprintf("block-%d", index+1)
+}
+
+// descriptiveClass returns the class token most likely to describe the region,
+// skipping utility classes (mt-4, w-1/2, flex) that describe presentation
+// instead. BEM modifiers are reduced to their block: post--featured is a Post.
+func descriptiveClass(classAttr string) string {
+	tokens := strings.Fields(classAttr)
+
+	for _, pass := range []bool{true, false} {
+		for _, token := range tokens {
+			if idx := strings.Index(token, "--"); idx > 0 {
+				token = token[:idx]
+			}
+			if token == "" {
+				continue
+			}
+			if pass && !isDescriptiveToken(token) {
+				continue
+			}
+			return token
+		}
+	}
+	return ""
+}
+
+func isDescriptiveToken(token string) bool {
+	if len(token) < 3 {
+		return false
+	}
+	return !strings.ContainsAny(token, "0123456789/:")
 }
 
 func sanitizeComponentName(name string) string {
