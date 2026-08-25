@@ -44,7 +44,9 @@ debug-*
 debug-extracted/
 testing/
 tests/
-testdata/
+# Scratch output at the repo root. Go per-package testdata/ directories hold
+# committed fixtures and must stay tracked.
+/testdata/
 test_out
 .tmp/
 

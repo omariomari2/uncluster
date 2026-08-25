@@ -428,7 +428,7 @@ func (c *JSXConverter) renderNodeIndented(buf *strings.Builder, n *html.Node, de
 	case html.TextNode:
 		trimmed := strings.TrimSpace(n.Data)
 		if trimmed != "" {
-			buf.WriteString(strings.Repeat("  ", depth) + trimmed + "\n")
+			buf.WriteString(strings.Repeat("  ", depth) + escapeJSXText(trimmed) + "\n")
 		}
 	case html.CommentNode:
 		trimmed := strings.TrimSpace(n.Data)
@@ -570,7 +570,7 @@ func (c *JSXConverter) renderElementIndented(buf *strings.Builder, n *html.Node,
 				textBuf.WriteString(strings.TrimSpace(child.Data))
 			}
 		}
-		buf.WriteString(">" + textBuf.String() + "</" + n.Data + ">\n")
+		buf.WriteString(">" + escapeJSXText(textBuf.String()) + "</" + n.Data + ">\n")
 	}
 }
 

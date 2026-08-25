@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -93,8 +94,9 @@ func TestConvertAttributeDropsNamespacedAttributes(t *testing.T) {
 
 // assertJSXStructurallyValid catches the syntax errors the old duplicate
 // converters produced: unbalanced braces, unescaped quotes inside attribute
-// values, and single-braced style objects. It is a structural check, not a real
-// parse; a genuine parse would need Node or esbuild.
+// values, single-braced style objects, and raw braces left in text position.
+// It is a structural check, not a real parse; a genuine parse would need Node
+// or esbuild.
 func assertJSXStructurallyValid(t *testing.T, src string) {
 	t.Helper()
 
@@ -112,6 +114,38 @@ func assertJSXStructurallyValid(t *testing.T, src string) {
 	if depth := braceDepth(src); depth != 0 {
 		t.Errorf("unbalanced braces in generated JSX (net depth %d):\n%s", depth, src)
 	}
+
+	// Brace-in-text only makes sense inside the returned markup; the surrounding
+	// TypeScript legitimately uses braces.
+	jsx := src
+	if body, err := extractJSX(src); err == nil {
+		jsx = body
+	}
+	if stray := strayTextBraces(jsx); stray != "" {
+		t.Errorf("raw brace left in JSX text position (should be escaped to &#123;/&#125;): %s", stray)
+	}
+}
+
+var (
+	jsxExprAttrPattern = regexp.MustCompile(`[A-Za-z-]+=\{(?:[^{}]|\{[^{}]*\})*\}`)
+	jsxQuotedPattern   = regexp.MustCompile(`[A-Za-z-]+="[^"]*"`)
+	jsxCommentPattern  = regexp.MustCompile(`\{/\*.*?\*/\}`)
+)
+
+// strayTextBraces reports a brace sitting in text position. Every legitimate
+// brace this converter emits belongs to an expression attribute, a quoted
+// value, or a JSX comment; anything left after removing those is unescaped text
+// that would be parsed as an expression.
+func strayTextBraces(src string) string {
+	for _, line := range strings.Split(src, "\n") {
+		stripped := jsxCommentPattern.ReplaceAllString(line, "")
+		stripped = jsxExprAttrPattern.ReplaceAllString(stripped, "")
+		stripped = jsxQuotedPattern.ReplaceAllString(stripped, "")
+		if strings.ContainsAny(stripped, "{}") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
 }
 
 // findUnescapedAttributeQuote reports an attr="..." whose value contains a bare
