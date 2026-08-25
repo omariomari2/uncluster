@@ -2,75 +2,14 @@ package converter
 
 import (
 	"fmt"
-	"github.com/omariomari2/uncluster/internal/fetcher"
 	"strings"
 
 	"golang.org/x/net/html"
 )
 
-type JSXConverter struct {
-	ExternalCSS []fetcher.FetchedResource
-	ExternalJS  []fetcher.FetchedResource
-}
-
-func ConvertToJSX(html, css, js string, externalCSS []fetcher.FetchedResource, externalJS []fetcher.FetchedResource) (string, error) {
-	converter := &JSXConverter{
-		ExternalCSS: externalCSS,
-		ExternalJS:  externalJS,
-	}
-
-	jsx, err := converter.convertHTMLToJSX(html)
-	if err != nil {
-		return "", fmt.Errorf("failed to convert HTML to JSX: %w", err)
-	}
-
-	cssImports := converter.generateCSSImports(css)
-	jsCode := converter.generateJSCode(js)
-
-	component := fmt.Sprintf(`import React from 'react'
-%s
-
-function MainComponent() {
-  return (
-    <>
-      %s
-    </>
-  )
-}
-
-%s
-
-export default MainComponent
-`, cssImports, jsx, jsCode)
-
-	return component, nil
-}
-
-func (c *JSXConverter) convertHTMLToJSX(htmlContent string) (string, error) {
-	doc, err := html.Parse(strings.NewReader(htmlContent))
-	if err != nil {
-		return "", fmt.Errorf("failed to parse HTML: %w", err)
-	}
-
-	var buf strings.Builder
-	c.renderNodeAsJSX(&buf, doc)
-	return buf.String(), nil
-}
-
-func (c *JSXConverter) renderNodeAsJSX(buf *strings.Builder, n *html.Node) {
-	switch n.Type {
-	case html.DocumentNode:
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			c.renderNodeAsJSX(buf, child)
-		}
-	case html.ElementNode:
-		c.renderElementAsJSX(buf, n)
-	case html.TextNode:
-		c.renderTextAsJSX(buf, n)
-	case html.CommentNode:
-		c.renderCommentAsJSX(buf, n)
-	}
-}
+// JSXConverter carries no state; it groups the render methods that make up a
+// single conversion.
+type JSXConverter struct{}
 
 var jsxAttributeMap = map[string]string{
 	// HTML
@@ -216,48 +155,8 @@ var skipElements = map[string]bool{
 	"style": true, "script": true,
 }
 
-func (c *JSXConverter) renderElementAsJSX(buf *strings.Builder, n *html.Node) {
-	if skipElements[n.Data] {
-		if n.Data == "html" || n.Data == "body" {
-			for child := n.FirstChild; child != nil; child = child.NextSibling {
-				c.renderNodeAsJSX(buf, child)
-			}
-		}
-		return
-	}
-
-	buf.WriteString("<")
-	buf.WriteString(n.Data)
-
-	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr, nil)
-		if key != "" && val != "" {
-			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
-		}
-	}
-
-	if voidElements[n.Data] {
-		buf.WriteString(" />")
-		return
-	}
-
-	buf.WriteString(">")
-
-	for child := n.FirstChild; child != nil; child = child.NextSibling {
-		c.renderNodeAsJSX(buf, child)
-	}
-
-	buf.WriteString("</")
-	buf.WriteString(n.Data)
-	buf.WriteString(">")
-}
-
 // convertAttribute converts one HTML attribute into a JSX name/value pair.
-//
-// fieldSubs may be nil. When set, an attribute value that exactly matches one of
-// its keys is emitted as the corresponding JS expression instead of a literal,
-// which is how list items reference their own data.
-func (c *JSXConverter) convertAttribute(attr html.Attribute, fieldSubs map[string]string) (string, string) {
+func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
 	key := attr.Key
 	val := attr.Val
 
@@ -284,16 +183,12 @@ func (c *JSXConverter) convertAttribute(attr html.Attribute, fieldSubs map[strin
 	}
 
 	if key == "style" {
-		return "style", c.convertStyle(val, fieldSubs)
+		return "style", c.convertStyle(val)
 	}
 
 	// Presence alone means true: disabled="false" is still disabled in HTML.
 	if isBoolean {
 		return key, "{true}"
-	}
-
-	if ref, ok := fieldSubs[val]; ok {
-		return key, "{" + ref + "}"
 	}
 
 	return key, fmt.Sprintf(`"%s"`, escapeJSXAttribute(val))
@@ -367,10 +262,7 @@ func escapeJSXStyleValue(value string) string {
 
 // convertStyle converts a CSS declaration list into a JSX style object literal,
 // including the outer braces: style={{color: 'red'}}.
-//
-// fieldSubs may be nil. When set, a declaration whose value matches one of its
-// keys is emitted as a bare JS expression rather than a quoted literal.
-func (c *JSXConverter) convertStyle(style string, fieldSubs map[string]string) string {
+func (c *JSXConverter) convertStyle(style string) string {
 	var jsxStyles []string
 
 	for _, s := range strings.Split(style, ";") {
@@ -384,43 +276,13 @@ func (c *JSXConverter) convertStyle(style string, fieldSubs map[string]string) s
 			continue
 		}
 
-		cssKey := strings.TrimSpace(parts[0])
+		camelKey := c.kebabToCamel(strings.TrimSpace(parts[0]))
 		cssVal := strings.TrimSpace(parts[1])
-		camelKey := c.kebabToCamel(cssKey)
-
-		if ref, ok := backgroundImageRef(cssKey, cssVal, fieldSubs); ok {
-			jsxStyles = append(jsxStyles, camelKey+": `url(${"+ref+"})`")
-			continue
-		}
-
-		if ref, ok := fieldSubs[cssVal]; ok {
-			jsxStyles = append(jsxStyles, camelKey+": "+ref)
-			continue
-		}
 
 		jsxStyles = append(jsxStyles, fmt.Sprintf("%s: '%s'", camelKey, escapeJSXStyleValue(cssVal)))
 	}
 
 	return fmt.Sprintf("{{%s}}", strings.Join(jsxStyles, ", "))
-}
-
-// backgroundImageRef reports the field reference for a background-image whose
-// url(...) target is a substitutable value.
-func backgroundImageRef(cssKey, cssVal string, fieldSubs map[string]string) (string, bool) {
-	if cssKey != "background-image" || len(fieldSubs) == 0 {
-		return "", false
-	}
-	start := strings.Index(cssVal, "url(")
-	if start < 0 {
-		return "", false
-	}
-	rest := strings.TrimLeft(cssVal[start+4:], "'\" ")
-	end := strings.IndexAny(rest, "'\")")
-	if end <= 0 {
-		return "", false
-	}
-	ref, ok := fieldSubs[rest[:end]]
-	return ref, ok
 }
 
 func (c *JSXConverter) kebabToCamel(s string) string {
@@ -437,85 +299,6 @@ func (c *JSXConverter) kebabToCamel(s string) string {
 	}
 
 	return result
-}
-
-func (c *JSXConverter) renderTextAsJSX(buf *strings.Builder, n *html.Node) {
-	text := n.Data
-
-	if strings.Contains(text, "<!--") && strings.Contains(text, "-->") {
-		text = convertHTMLCommentsInText(text)
-	}
-
-	normalized := normalizeInlineText(text)
-	if normalized != "" {
-		buf.WriteString(escapeJSXText(normalized))
-	}
-}
-
-func convertHTMLCommentsInText(text string) string {
-	result := text
-	start := 0
-	for {
-		commentStart := strings.Index(result[start:], "<!--")
-		if commentStart == -1 {
-			break
-		}
-		commentStart += start
-		commentEnd := strings.Index(result[commentStart:], "-->")
-		if commentEnd == -1 {
-			break
-		}
-		commentEnd += commentStart + 3
-
-		commentContent := result[commentStart+4 : commentEnd-3]
-
-		jsxComment := "{/*" + commentContent + "*/}"
-		result = result[:commentStart] + jsxComment + result[commentEnd:]
-		start = commentStart + len(jsxComment)
-	}
-	return result
-}
-
-func (c *JSXConverter) renderCommentAsJSX(buf *strings.Builder, n *html.Node) {
-	buf.WriteString("{/*")
-	buf.WriteString(n.Data)
-	buf.WriteString("*/}")
-}
-
-func (c *JSXConverter) generateCSSImports(css string) string {
-	var imports []string
-
-	if css != "" {
-		imports = append(imports, `import '../styles/main.css'`)
-	}
-
-	for _, cssFile := range c.ExternalCSS {
-		if cssFile.Error == nil {
-			imports = append(imports, fmt.Sprintf(`import '../styles/external/%s'`, cssFile.Filename))
-		}
-	}
-
-	return strings.Join(imports, "\n")
-}
-
-func (c *JSXConverter) generateJSCode(js string) string {
-	var jsCode strings.Builder
-
-	if js != "" {
-		jsCode.WriteString("\n")
-		jsCode.WriteString(js)
-		jsCode.WriteString("\n")
-	}
-
-	for _, jsFile := range c.ExternalJS {
-		if jsFile.Error == nil {
-			jsCode.WriteString("\n")
-			jsCode.WriteString(jsFile.Content)
-			jsCode.WriteString("\n")
-		}
-	}
-
-	return jsCode.String()
 }
 
 // =============================================================
@@ -536,11 +319,6 @@ func ConvertSectionToTSX(htmlFragment, componentName string) (string, error) {
 	}
 
 	body := findBodyNode(doc)
-
-	// Detect repeated list patterns and generate typed component.
-	if pattern := detectListPattern(body); pattern != nil {
-		return buildListComponentTSX(componentName, pattern, c, body), nil
-	}
 
 	roots := nonSkippedChildren(body)
 
@@ -725,7 +503,7 @@ func (c *JSXConverter) renderChildrenInline(buf *strings.Builder, n *html.Node) 
 			}
 			buf.WriteString("<" + child.Data)
 			for _, attr := range child.Attr {
-				key, val := c.convertAttribute(attr, nil)
+				key, val := c.convertAttribute(attr)
 				if key != "" && val != "" {
 					buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
 				}
@@ -760,7 +538,7 @@ func (c *JSXConverter) renderElementIndented(buf *strings.Builder, n *html.Node,
 	buf.WriteString(indent + "<" + n.Data)
 
 	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr, nil)
+		key, val := c.convertAttribute(attr)
 		if key != "" && val != "" {
 			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
 		}
@@ -827,509 +605,4 @@ func nonSkippedChildren(n *html.Node) []*html.Node {
 		}
 	}
 	return result
-}
-
-func jsxGetAttr(n *html.Node, key string) string {
-	for _, attr := range n.Attr {
-		if strings.EqualFold(attr.Key, key) {
-			return attr.Val
-		}
-	}
-	return ""
-}
-
-func jsxHasClass(n *html.Node, class string) bool {
-	for _, c := range strings.Fields(jsxGetAttr(n, "class")) {
-		if c == class {
-			return true
-		}
-	}
-	return false
-}
-
-func jsxTextContent(n *html.Node) string {
-	var buf strings.Builder
-	var walk func(*html.Node)
-	walk = func(node *html.Node) {
-		if node.Type == html.TextNode {
-			buf.WriteString(node.Data)
-		}
-		for c := node.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(n)
-	return strings.TrimSpace(buf.String())
-}
-
-func jsxFindFirst(n *html.Node, tag string) *html.Node {
-	if n.Type == html.ElementNode && n.Data == tag {
-		return n
-	}
-	for child := n.FirstChild; child != nil; child = child.NextSibling {
-		if result := jsxFindFirst(child, tag); result != nil {
-			return result
-		}
-	}
-	return nil
-}
-
-func jsxFindBgURL(n *html.Node) string {
-	if n.Type == html.ElementNode {
-		style := jsxGetAttr(n, "style")
-		if strings.Contains(style, "background-image") {
-			start := strings.Index(style, "url(")
-			if start >= 0 {
-				rest := style[start+4:]
-				rest = strings.TrimLeft(rest, "'\" ")
-				end := strings.IndexAny(rest, "'\")")
-				if end > 0 {
-					return rest[:end]
-				}
-			}
-		}
-	}
-	for child := n.FirstChild; child != nil; child = child.NextSibling {
-		if url := jsxFindBgURL(child); url != "" {
-			return url
-		}
-	}
-	return ""
-}
-
-// =============================================================
-// List pattern detection
-// =============================================================
-
-type listField struct {
-	Name   string
-	TSType string
-	Values []string
-}
-
-type listPattern struct {
-	Wrapper *html.Node
-	Items   []*html.Node
-	Fields  []listField
-}
-
-func detectListPattern(body *html.Node) *listPattern {
-	if body == nil {
-		return nil
-	}
-	return findListInSubtree(body, 0)
-}
-
-func findListInSubtree(n *html.Node, depth int) *listPattern {
-	if n == nil || depth > 8 || n.Type != html.ElementNode {
-		return nil
-	}
-
-	items := collectRepeatedItems(n)
-	if len(items) >= 2 {
-		fields := extractListFields(items)
-		if len(fields) > 0 {
-			return &listPattern{Wrapper: n, Items: items, Fields: fields}
-		}
-	}
-
-	for child := n.FirstChild; child != nil; child = child.NextSibling {
-		if p := findListInSubtree(child, depth+1); p != nil {
-			return p
-		}
-	}
-	return nil
-}
-
-func collectRepeatedItems(n *html.Node) []*html.Node {
-	var children []*html.Node
-	for child := n.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type == html.ElementNode {
-			children = append(children, child)
-		}
-	}
-	if len(children) < 2 {
-		return nil
-	}
-
-	// Webflow w-dyn-items pattern
-	class := jsxGetAttr(n, "class")
-	if strings.Contains(class, "w-dyn-items") || strings.Contains(class, "w-dyn-list") {
-		var items []*html.Node
-		for _, child := range children {
-			if jsxHasClass(child, "w-dyn-item") || jsxGetAttr(child, "role") == "listitem" {
-				items = append(items, child)
-			}
-		}
-		if len(items) >= 2 {
-			return items
-		}
-	}
-
-	// role="listitem" siblings
-	if jsxGetAttr(children[0], "role") == "listitem" {
-		var items []*html.Node
-		for _, child := range children {
-			if jsxGetAttr(child, "role") == "listitem" {
-				items = append(items, child)
-			}
-		}
-		if len(items) >= 2 {
-			return items
-		}
-	}
-
-	// ul/ol with li children
-	if n.Data == "ul" || n.Data == "ol" {
-		var items []*html.Node
-		for _, child := range children {
-			if child.Data == "li" {
-				items = append(items, child)
-			}
-		}
-		if len(items) >= 2 {
-			return items
-		}
-	}
-
-	// Same tag + same class (3+ for confidence)
-	first := children[0]
-	firstClass := jsxGetAttr(first, "class")
-	if firstClass != "" {
-		var items []*html.Node
-		for _, child := range children {
-			if child.Data == first.Data && jsxGetAttr(child, "class") == firstClass {
-				items = append(items, child)
-			}
-		}
-		if len(items) >= 3 {
-			return items
-		}
-	}
-
-	return nil
-}
-
-type fieldExtractor struct {
-	name    string
-	tsType  string
-	extract func(*html.Node) string
-}
-
-func buildFieldExtractors() []fieldExtractor {
-	return []fieldExtractor{
-		{
-			name: "href", tsType: "string",
-			extract: func(n *html.Node) string {
-				a := jsxFindFirst(n, "a")
-				if a == nil {
-					return ""
-				}
-				return jsxGetAttr(a, "href")
-			},
-		},
-		{
-			name: "imageSrc", tsType: "string",
-			extract: func(n *html.Node) string {
-				img := jsxFindFirst(n, "img")
-				if img == nil {
-					return ""
-				}
-				return jsxGetAttr(img, "src")
-			},
-		},
-		{
-			name: "imageAlt", tsType: "string",
-			extract: func(n *html.Node) string {
-				img := jsxFindFirst(n, "img")
-				if img == nil {
-					return ""
-				}
-				return jsxGetAttr(img, "alt")
-			},
-		},
-		{
-			name: "title", tsType: "string",
-			extract: func(n *html.Node) string {
-				for _, tag := range []string{"h1", "h2", "h3", "h4", "h5", "h6"} {
-					h := jsxFindFirst(n, tag)
-					if h != nil {
-						t := jsxTextContent(h)
-						if t != "" {
-							return t
-						}
-					}
-				}
-				return ""
-			},
-		},
-		{
-			name: "description", tsType: "string",
-			extract: func(n *html.Node) string {
-				p := jsxFindFirst(n, "p")
-				if p == nil {
-					return ""
-				}
-				return jsxTextContent(p)
-			},
-		},
-		{
-			name: "label", tsType: "string",
-			extract: func(n *html.Node) string {
-				a := jsxFindFirst(n, "a")
-				if a == nil {
-					return ""
-				}
-				return jsxTextContent(a)
-			},
-		},
-		{
-			name: "backgroundImage", tsType: "string",
-			extract: func(n *html.Node) string {
-				return jsxFindBgURL(n)
-			},
-		},
-	}
-}
-
-func extractListFields(items []*html.Node) []listField {
-	if len(items) == 0 {
-		return nil
-	}
-
-	extractors := buildFieldExtractors()
-	var fields []listField
-	seen := make(map[string]bool)
-
-	for _, ext := range extractors {
-		val0 := ext.extract(items[0])
-		if val0 == "" {
-			continue
-		}
-
-		values := make([]string, len(items))
-		values[0] = val0
-		allSame := true
-		for i := 1; i < len(items); i++ {
-			values[i] = ext.extract(items[i])
-			if values[i] != val0 {
-				allSame = false
-			}
-		}
-
-		if allSame && len(items) > 1 {
-			continue
-		}
-		if seen[ext.name] {
-			continue
-		}
-		seen[ext.name] = true
-
-		fields = append(fields, listField{
-			Name:   ext.name,
-			TSType: ext.tsType,
-			Values: values,
-		})
-	}
-
-	return fields
-}
-
-// =============================================================
-// List component TSX builder
-// =============================================================
-
-func buildListComponentTSX(componentName string, pattern *listPattern, c *JSXConverter, body *html.Node) string {
-	typeName := componentName + "Item"
-
-	// value → field reference (without braces) for substitution
-	fieldSubs := make(map[string]string)
-	for _, field := range pattern.Fields {
-		if len(field.Values) > 0 && field.Values[0] != "" {
-			if field.Name == "backgroundImage" {
-				fieldSubs[field.Values[0]] = "item.backgroundImage"
-			} else {
-				fieldSubs[field.Values[0]] = "item." + field.Name
-			}
-		}
-	}
-
-	// TypeScript interface
-	var iface strings.Builder
-	iface.WriteString(fmt.Sprintf("interface %s {\n", typeName))
-	for _, f := range pattern.Fields {
-		iface.WriteString(fmt.Sprintf("  %s: %s\n", f.Name, f.TSType))
-	}
-	iface.WriteString("}\n")
-
-	// Data array
-	var data strings.Builder
-	data.WriteString(fmt.Sprintf("const items: %s[] = [\n", typeName))
-	for i := range pattern.Items {
-		data.WriteString("  {\n")
-		for _, f := range pattern.Fields {
-			val := ""
-			if i < len(f.Values) {
-				val = f.Values[i]
-			}
-			data.WriteString(fmt.Sprintf("    %s: %q,\n", f.Name, val))
-		}
-		data.WriteString("  },\n")
-	}
-	data.WriteString("]\n")
-
-	// Outer structure with map injection at wrapper node.
-	// Item depth is determined dynamically by renderWithListMap.
-	roots := nonSkippedChildren(body)
-	var bodyBuf strings.Builder
-	for _, root := range roots {
-		c.renderWithListMap(&bodyBuf, root, 2, pattern, fieldSubs)
-	}
-	bodyJSX := strings.TrimRight(bodyBuf.String(), "\n")
-
-	var returnExpr string
-	if len(roots) == 1 {
-		returnExpr = fmt.Sprintf("(\n%s\n  )", bodyJSX)
-	} else {
-		returnExpr = fmt.Sprintf("(\n    <>\n%s\n    </>)", bodyJSX)
-	}
-
-	return fmt.Sprintf(`import React from 'react'
-
-%s
-%s
-function %s(): JSX.Element {
-  return %s
-}
-
-export default %s
-`, iface.String(), data.String(), componentName, returnExpr, componentName)
-}
-
-// renderWithListMap renders the tree normally but replaces the list wrapper's
-// children with a {items.map(...)} expression. The item template is rendered
-// inline at depth+2 (inside the map call) for correct indentation.
-func (c *JSXConverter) renderWithListMap(
-	buf *strings.Builder, n *html.Node, depth int,
-	pattern *listPattern, fieldSubs map[string]string,
-) {
-	if n == nil || n.Type != html.ElementNode {
-		return
-	}
-	if skipElements[n.Data] {
-		if n.Data == "html" || n.Data == "body" {
-			for child := n.FirstChild; child != nil; child = child.NextSibling {
-				c.renderWithListMap(buf, child, depth, pattern, fieldSubs)
-			}
-		}
-		return
-	}
-
-	indent := strings.Repeat("  ", depth)
-	buf.WriteString(indent + "<" + n.Data)
-	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr, nil)
-		if key != "" && val != "" {
-			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
-		}
-	}
-
-	if voidElements[n.Data] {
-		buf.WriteString(" />\n")
-		return
-	}
-
-	// Replace this node's children with the map expression.
-	// Item renders at depth+2: depth+1 for inside map, then the element itself.
-	if n == pattern.Wrapper {
-		buf.WriteString(">\n")
-		mapIndent := strings.Repeat("  ", depth+1)
-		buf.WriteString(mapIndent + "{items.map((item, index) => (\n")
-		c.renderElemWithSubs(buf, pattern.Items[0], depth+2, fieldSubs, true)
-		buf.WriteString(mapIndent + "))}\n")
-		buf.WriteString(indent + "</" + n.Data + ">\n")
-		return
-	}
-
-	if hasElemChild(n) {
-		buf.WriteString(">\n")
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			c.renderWithListMap(buf, child, depth+1, pattern, fieldSubs)
-		}
-		buf.WriteString(indent + "</" + n.Data + ">\n")
-	} else {
-		var textBuf strings.Builder
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.TextNode {
-				textBuf.WriteString(strings.TrimSpace(child.Data))
-			}
-		}
-		buf.WriteString(">" + textBuf.String() + "</" + n.Data + ">\n")
-	}
-}
-
-// renderElemWithSubs renders an item element substituting dynamic field values.
-func (c *JSXConverter) renderElemWithSubs(buf *strings.Builder, n *html.Node, depth int, fieldSubs map[string]string, isRoot bool) {
-	if n == nil || n.Type != html.ElementNode || skipElements[n.Data] {
-		return
-	}
-
-	indent := strings.Repeat("  ", depth)
-	buf.WriteString(indent + "<" + n.Data)
-
-	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr, fieldSubs)
-		if key != "" && val != "" {
-			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
-		}
-	}
-
-	// Add key prop at the root item level.
-	if isRoot {
-		buf.WriteString(" key={index}")
-	}
-
-	if voidElements[n.Data] {
-		buf.WriteString(" />\n")
-		return
-	}
-
-	if hasElemChild(n) {
-		buf.WriteString(">\n")
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			c.renderNodeWithSubs(buf, child, depth+1, fieldSubs)
-		}
-		buf.WriteString(indent + "</" + n.Data + ">\n")
-	} else {
-		var textBuf strings.Builder
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.TextNode {
-				textBuf.WriteString(strings.TrimSpace(child.Data))
-			}
-		}
-		text := textBuf.String()
-		if ref, ok := fieldSubs[text]; ok {
-			buf.WriteString(">{" + ref + "}</" + n.Data + ">\n")
-		} else {
-			buf.WriteString(">" + escapeJSXText(text) + "</" + n.Data + ">\n")
-		}
-	}
-}
-
-func (c *JSXConverter) renderNodeWithSubs(buf *strings.Builder, n *html.Node, depth int, fieldSubs map[string]string) {
-	switch n.Type {
-	case html.ElementNode:
-		c.renderElemWithSubs(buf, n, depth, fieldSubs, false)
-	case html.TextNode:
-		trimmed := strings.TrimSpace(n.Data)
-		if trimmed == "" {
-			return
-		}
-		indent := strings.Repeat("  ", depth)
-		if ref, ok := fieldSubs[trimmed]; ok {
-			buf.WriteString(indent + "{" + ref + "}\n")
-		} else {
-			buf.WriteString(indent + escapeJSXText(trimmed) + "\n")
-		}
-	}
 }

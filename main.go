@@ -10,7 +10,6 @@ import (
 
 	"github.com/omariomari2/uncluster/internal/analyzer"
 	"github.com/omariomari2/uncluster/internal/bundle"
-	"github.com/omariomari2/uncluster/internal/converter"
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/formatter"
 	"github.com/omariomari2/uncluster/internal/nodejs"
@@ -107,8 +106,6 @@ func setupRoutes(app *fiber.App) {
 
 	api.Post("/format", handleFormat)
 
-	api.Post("/convert", handleConvert)
-
 	api.Post("/analyze", handleAnalyze)
 
 	api.Post("/export", handleExport)
@@ -155,36 +152,6 @@ func handleFormat(c *fiber.Ctx) error {
 	return c.JSON(Response{
 		Success: true,
 		Data:    formatted,
-	})
-}
-
-func handleConvert(c *fiber.Ctx) error {
-	var req ConvertRequest
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(Response{
-			Success: false,
-			Error:   "Invalid request body",
-		})
-	}
-
-	if strings.TrimSpace(req.HTML) == "" {
-		return c.Status(400).JSON(Response{
-			Success: false,
-			Error:   "HTML content is required",
-		})
-	}
-
-	jsx, err := converter.ConvertToJSX(req.HTML, "", "", nil, nil)
-	if err != nil {
-		return c.Status(500).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})
-	}
-
-	return c.JSON(Response{
-		Success: true,
-		Data:    jsx,
 	})
 }
 

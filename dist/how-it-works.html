@@ -641,19 +641,6 @@
 
       <div class="feature-card">
         <span class="fc-method post">POST</span>
-        <span class="fc-path">/api/convert</span>
-        <h3 class="fc-title">Convert to JSX</h3>
-        <p class="fc-desc">
-          Rewrites the HTML as a valid React JSX component. Attribute names are translated
-          (<code>class→className</code>, <code>for→htmlFor</code>, all event handlers),
-          inline styles are converted to JS objects, void elements are self-closed,
-          and structural wrapper tags are stripped out.
-        </p>
-        <p class="fc-out">→ returns ready-to-paste .jsx / .tsx component</p>
-      </div>
-
-      <div class="feature-card">
-        <span class="fc-method post">POST</span>
         <span class="fc-path">/api/analyze</span>
         <h3 class="fc-title">Analyze Components</h3>
         <p class="fc-desc">
@@ -1017,12 +1004,6 @@ graph LR
           <td><code>/api/format</code></td>
           <td><code>{ html: string }</code></td>
           <td>Formatted HTML string</td>
-        </tr>
-        <tr>
-          <td class="m-post">POST</td>
-          <td><code>/api/convert</code></td>
-          <td><code>{ html: string }</code></td>
-          <td>JSX component string</td>
         </tr>
         <tr>
           <td class="m-post">POST</td>

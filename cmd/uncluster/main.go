@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/omariomari2/uncluster/internal/analyzer"
 	"github.com/omariomari2/uncluster/internal/bundle"
-	"github.com/omariomari2/uncluster/internal/converter"
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/formatter"
 	"github.com/omariomari2/uncluster/internal/nodejs"
@@ -15,7 +14,7 @@ import (
 	"time"
 )
 
-var validFormats = []string{"split", "nodejs", "nodejs-ejs", "format", "jsx", "analyze", "bundle"}
+var validFormats = []string{"split", "nodejs", "nodejs-ejs", "format", "analyze", "bundle"}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `uncluster — process HTML files from the command line
@@ -28,7 +27,6 @@ Formats:
   nodejs       Scaffold an Express + Vite + TypeScript project
   nodejs-ejs   Scaffold an Express + EJS server-rendered project
   format       Re-indent and normalize HTML (writes to stdout or output dir)
-  jsx          Convert HTML to a React JSX component (writes to stdout or output dir)
   analyze      Detect repeated UI patterns and suggest components (JSON)
   bundle       Find source index.html from a ZIP/HTML input and write index.html, unzip/, and ejs/
 
@@ -37,7 +35,6 @@ Examples:
   uncluster example-site.zip -to bundle -out ./sites
   uncluster page.html -to nodejs -out ./my-project
   uncluster template.html -to format
-  uncluster landing.html -to jsx
   uncluster dashboard.html -to analyze
 
 Flags:
@@ -132,8 +129,6 @@ func main() {
 	switch format {
 	case "format":
 		runFormat(htmlContent, outDir)
-	case "jsx":
-		runJSX(htmlContent, outDir)
 	case "analyze":
 		runAnalyze(htmlContent, outDir)
 	case "split":
@@ -193,30 +188,6 @@ func runFormat(htmlContent, outDir string) {
 		fail("write formatted HTML", err)
 	}
 	fmt.Printf("Formatted HTML written to %s\n", outPath)
-}
-
-// --- jsx ---
-
-func runJSX(htmlContent, outDir string) {
-	jsx, err := converter.ConvertToJSX(htmlContent, "", "", nil, nil)
-	if err != nil {
-		fail("convert to JSX", err)
-	}
-
-	if outDir == "" {
-		fmt.Print(jsx)
-		return
-	}
-
-	dir := resolveOutDir(outDir, "")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fail("create output directory", err)
-	}
-	outPath := filepath.Join(dir, "Component.jsx")
-	if err := os.WriteFile(outPath, []byte(jsx), 0o644); err != nil {
-		fail("write JSX", err)
-	}
-	fmt.Printf("JSX component written to %s\n", outPath)
 }
 
 // --- analyze ---

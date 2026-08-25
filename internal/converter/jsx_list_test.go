@@ -73,7 +73,7 @@ func TestConvertSectionToTSXEscapesAttributeAndTextSyntax(t *testing.T) {
 
 func TestConvertStyleEscapesQuotesInValues(t *testing.T) {
 	c := &JSXConverter{}
-	got := c.convertStyle(`font-family: 'Times New Roman'`, nil)
+	got := c.convertStyle(`font-family: 'Times New Roman'`)
 	want := `{{fontFamily: '\'Times New Roman\''}}`
 
 	if got != want {
@@ -81,35 +81,11 @@ func TestConvertStyleEscapesQuotesInValues(t *testing.T) {
 	}
 }
 
-func TestConvertStyleEmitsSubstitutionsAsBareExpressions(t *testing.T) {
-	c := &JSXConverter{}
-	subs := map[string]string{"12px": "item.fontSize"}
-
-	got := c.convertStyle("font-size: 12px", subs)
-	want := "{{fontSize: item.fontSize}}"
-
-	if got != want {
-		t.Fatalf("convertStyle() = %s, want %s", got, want)
-	}
-}
-
-func TestConvertStyleSubstitutesBackgroundImageURL(t *testing.T) {
-	c := &JSXConverter{}
-	subs := map[string]string{"/img/hero.png": "item.backgroundImage"}
-
-	got := c.convertStyle(`background-image: url('/img/hero.png')`, subs)
-	want := "{{backgroundImage: `url(${item.backgroundImage})`}}"
-
-	if got != want {
-		t.Fatalf("convertStyle() = %s, want %s", got, want)
-	}
-}
-
-func TestConvertAttributeDropsNamespacedAttributesWithSubstitutions(t *testing.T) {
+func TestConvertAttributeDropsNamespacedAttributes(t *testing.T) {
 	c := &JSXConverter{}
 	attr := html.Attribute{Namespace: "xlink", Key: "title", Val: "x"}
 
-	key, val := c.convertAttribute(attr, map[string]string{"x": "item.a"})
+	key, val := c.convertAttribute(attr)
 	if key != "" || val != "" {
 		t.Fatalf("convertAttribute() namespaced = (%q, %q), want both empty", key, val)
 	}
@@ -188,4 +164,19 @@ func braceDepth(src string) int {
 		prev = r
 	}
 	return depth
+}
+
+// Ported from the deleted ConvertToJSX suite: whitespace between inline
+// elements is meaningful and must survive conversion (DEF-009).
+func TestConvertSectionToTSXPreservesSpacesAroundInlineElements(t *testing.T) {
+	got, err := ConvertSectionToTSX(`<body><p>Hello <strong>world</strong> again</p></body>`, "Copy")
+	if err != nil {
+		t.Fatalf("ConvertSectionToTSX() error = %v", err)
+	}
+	assertJSXStructurallyValid(t, got)
+
+	want := `<p>Hello <strong>world</strong> again</p>`
+	if !strings.Contains(got, want) {
+		t.Fatalf("inline text missing %q; got:\n%s", want, got)
+	}
 }
