@@ -108,3 +108,6 @@ qa/
 # Build and tooling output
 .testbin/
 .gotmp-codex/
+
+# End-to-end run output (generated, not source)
+alre-output/
