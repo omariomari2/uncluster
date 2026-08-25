@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -59,7 +60,9 @@ func TestFidelityAgainstFixtures(t *testing.T) {
 			}
 
 			want := normalizeTree(t, parseFragment(t, string(source)))
-			got := normalizeTree(t, parseFragment(t, jsxToHTML(jsx)))
+			generated := parseFragment(t, jsxToHTML(jsx))
+			applyReactInverse(generated)
+			got := normalizeTree(t, generated)
 
 			if want != got {
 				t.Errorf("DOM fidelity lost\n\nwant: %s\n\ngot:  %s\n\n--- generated TSX ---\n%s",
@@ -110,6 +113,10 @@ var (
 	jsxHandlerPattern = regexp.MustCompile(`(on[A-Z][A-Za-z]*)=\{\(\) => \{ (.*?) \}\}`)
 	// jsxBoolPattern matches disabled={true}.
 	jsxBoolPattern = regexp.MustCompile(`([A-Za-z-]+)=\{true\}`)
+	// jsxDefaultValuePattern matches defaultValue={"x"} and defaultValue={["a","b"]}.
+	jsxDefaultValuePattern = regexp.MustCompile(`defaultValue=\{(\[[^\]]*\]|"(?:[^"\\]|\\.)*")\}`)
+	// jsStringLiteralPattern matches one double-quoted JS string literal.
+	jsStringLiteralPattern = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
 )
 
 // inverseAttributeMap maps the lowercased JSX attribute name back to its HTML
@@ -146,7 +153,94 @@ func jsxToHTML(jsx string) string {
 	// A boolean attribute round-trips as bare presence.
 	out = jsxBoolPattern.ReplaceAllString(out, `$1=""`)
 
+	// defaultValue holds a JS string literal, which html.Parse cannot read as an
+	// attribute value. Flatten it to a plain attribute for applyReactInverse to
+	// turn back into DOM.
+	out = jsxDefaultValuePattern.ReplaceAllStringFunc(out, func(match string) string {
+		inner := jsxDefaultValuePattern.FindStringSubmatch(match)[1]
+		var values []string
+		for _, lit := range jsStringLiteralPattern.FindAllString(inner, -1) {
+			if v, err := strconv.Unquote(lit); err == nil {
+				values = append(values, v)
+			}
+		}
+		// Written as an HTML attribute, not re-quoted: HTML does not decode
+		// backslash escapes, so the value must carry real newlines and tabs.
+		return `defaultvalue="` + htmlAttrEscape(strings.Join(values, defaultValueSep)) + `"`
+	})
+
+	// Self-closing syntax is only valid for void elements in HTML. <textarea />
+	// is RCDATA, so an unclosed tag swallows the rest of the document.
+	out = selfClosedTextareaPattern.ReplaceAllString(out, `$1></textarea>`)
+
 	return out
+}
+
+var selfClosedTextareaPattern = regexp.MustCompile(`(<textarea\b[^>]*?)\s*/>`)
+
+var htmlAttrEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	`"`, "&quot;",
+	"<", "&lt;",
+	">", "&gt;",
+)
+
+func htmlAttrEscape(s string) string { return htmlAttrEscaper.Replace(s) }
+
+// defaultValueSep joins a multiple-select's values inside a single attribute.
+const defaultValueSep = "\x1f"
+
+// applyReactInverse undoes the divergences React requires, so the generated
+// tree can be compared against the source DOM. React reconstructs exactly this
+// at runtime: textarea content from defaultValue, and option selection from the
+// enclosing select's defaultValue.
+func applyReactInverse(n *html.Node) {
+	if n.Type == html.ElementNode {
+		switch n.Data {
+		case "textarea":
+			if value, ok := takeAttr(n, "defaultvalue"); ok {
+				for n.FirstChild != nil {
+					n.RemoveChild(n.FirstChild)
+				}
+				n.AppendChild(&html.Node{Type: html.TextNode, Data: value})
+			}
+		case "select":
+			if value, ok := takeAttr(n, "defaultvalue"); ok {
+				chosen := map[string]bool{}
+				for _, v := range strings.Split(value, defaultValueSep) {
+					chosen[v] = true
+				}
+				markSelectedOptions(n, chosen)
+			}
+		}
+	}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		applyReactInverse(c)
+	}
+}
+
+func markSelectedOptions(sel *html.Node, chosen map[string]bool) {
+	for c := sel.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode {
+			continue
+		}
+		if c.Data == "option" && chosen[optionValue(c)] {
+			c.Attr = append(c.Attr, html.Attribute{Key: "selected", Val: ""})
+		}
+		markSelectedOptions(c, chosen)
+	}
+}
+
+// takeAttr removes an attribute and returns its value.
+func takeAttr(n *html.Node, key string) (string, bool) {
+	for i, a := range n.Attr {
+		if strings.EqualFold(a.Key, key) {
+			n.Attr = append(n.Attr[:i], n.Attr[i+1:]...)
+			return a.Val, true
+		}
+	}
+	return "", false
 }
 
 // styleObjectToCSS turns {fontSize: '12px', color: 'red'} back into
@@ -333,4 +427,73 @@ func canonicalCSS(style string) string {
 
 func collapseSpace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// React imposes rules that plain HTML does not. These are the cases where the
+// generated JSX deliberately differs from the source DOM; applyReactInverse
+// encodes what React reconstructs at runtime, so TestFidelityAgainstFixtures
+// still holds the output to the source.
+func TestGeneratedJSXIsReactValid(t *testing.T) {
+	cases := []struct {
+		name     string
+		markup   string
+		wantAny  []string
+		wantNone []string
+	}{
+		{
+			name:     "textarea content becomes defaultValue",
+			markup:   `<form><textarea name="bio">hello</textarea><p>x</p></form>`,
+			wantAny:  []string{`defaultValue={"hello"}`},
+			wantNone: []string{`<textarea name="bio">hello</textarea>`},
+		},
+		{
+			name:     "textarea newlines survive as escapes",
+			markup:   "<form><textarea>a\nb</textarea><p>x</p></form>",
+			wantAny:  []string{`defaultValue={"a\nb"}`},
+			wantNone: []string{},
+		},
+		{
+			name:     "select selection moves off the option",
+			markup:   `<form><select name="t"><option value="a">A</option><option value="b" selected>B</option></select><p>x</p></form>`,
+			wantAny:  []string{`defaultValue={"b"}`},
+			wantNone: []string{"selected={true}", "selected="},
+		},
+		{
+			name:     "option without value falls back to its text",
+			markup:   `<form><select><option selected>Alpha</option><option>Beta</option></select><p>x</p></form>`,
+			wantAny:  []string{`defaultValue={"Alpha"}`},
+			wantNone: []string{"selected="},
+		},
+		{
+			name:     "multiple select yields an array",
+			markup:   `<form><select multiple><option selected>A</option><option selected>B</option></select><p>x</p></form>`,
+			wantAny:  []string{`defaultValue={["A", "B"]}`},
+			wantNone: []string{"selected="},
+		},
+		{
+			name:     "select with no selection gets no defaultValue",
+			markup:   `<form><select><option>A</option></select><p>x</p></form>`,
+			wantAny:  []string{},
+			wantNone: []string{"defaultValue"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ConvertSectionToTSX("<body>"+tc.markup+"</body>", "Fixture")
+			if err != nil {
+				t.Fatalf("ConvertSectionToTSX() error = %v", err)
+			}
+			for _, want := range tc.wantAny {
+				if !strings.Contains(got, want) {
+					t.Errorf("output missing %q; got:\n%s", want, got)
+				}
+			}
+			for _, unwanted := range tc.wantNone {
+				if strings.Contains(got, unwanted) {
+					t.Errorf("output should not contain %q; got:\n%s", unwanted, got)
+				}
+			}
+		})
+	}
 }

@@ -2,6 +2,7 @@ package converter
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -508,12 +509,7 @@ func (c *JSXConverter) renderChildrenInline(buf *strings.Builder, n *html.Node) 
 				continue
 			}
 			buf.WriteString("<" + child.Data)
-			for _, attr := range child.Attr {
-				key, val := c.convertAttribute(attr)
-				if key != "" && val != "" {
-					buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
-				}
-			}
+			c.writeAttributes(buf, child)
 			if voidElements[child.Data] {
 				buf.WriteString(" />")
 				continue
@@ -542,21 +538,22 @@ func (c *JSXConverter) renderElementIndented(buf *strings.Builder, n *html.Node,
 
 	indent := strings.Repeat("  ", depth)
 	buf.WriteString(indent + "<" + n.Data)
-
-	for _, attr := range n.Attr {
-		key, val := c.convertAttribute(attr)
-		if key != "" && val != "" {
-			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
-		}
-	}
+	c.writeAttributes(buf, n)
 
 	if voidElements[n.Data] {
 		buf.WriteString(" />\n")
 		return
 	}
 
-	// Inside <pre> and <textarea> every byte of whitespace is significant, so
-	// the content is emitted verbatim with no collapsing or re-indentation.
+	// React rejects children on <textarea> and wants the content as
+	// defaultValue. The rendered DOM is the same; only the source differs.
+	if n.Data == "textarea" {
+		buf.WriteString(" defaultValue={" + jsStringLiteral(elementText(n)) + "} />\n")
+		return
+	}
+
+	// Inside <pre> every byte of whitespace is significant, so the content is
+	// emitted verbatim with no collapsing or re-indentation.
 	if preserveWhitespaceElements[n.Data] {
 		buf.WriteString(">")
 		c.renderChildrenVerbatim(buf, n)
@@ -635,12 +632,7 @@ func (c *JSXConverter) renderChildrenVerbatim(buf *strings.Builder, n *html.Node
 				continue
 			}
 			buf.WriteString("<" + child.Data)
-			for _, attr := range child.Attr {
-				key, val := c.convertAttribute(attr)
-				if key != "" && val != "" {
-					buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
-				}
-			}
+			c.writeAttributes(buf, child)
 			if voidElements[child.Data] {
 				buf.WriteString(" />")
 				continue
@@ -650,4 +642,103 @@ func (c *JSXConverter) renderChildrenVerbatim(buf *strings.Builder, n *html.Node
 			buf.WriteString("</" + child.Data + ">")
 		}
 	}
+}
+
+// writeAttributes emits an element's attributes, applying the rules React
+// imposes that plain HTML does not.
+func (c *JSXConverter) writeAttributes(buf *strings.Builder, n *html.Node) {
+	for _, attr := range n.Attr {
+		// React rejects selected on <option>; the choice is expressed as
+		// defaultValue on the enclosing <select> instead.
+		if n.Data == "option" && strings.EqualFold(attr.Key, "selected") {
+			continue
+		}
+		key, val := c.convertAttribute(attr)
+		if key != "" && val != "" {
+			buf.WriteString(fmt.Sprintf(" %s=%s", key, val))
+		}
+	}
+
+	if n.Data == "select" {
+		if value, ok := selectDefaultValue(n); ok {
+			buf.WriteString(" defaultValue=" + value)
+		}
+	}
+}
+
+// selectDefaultValue renders the defaultValue for a <select>, derived from
+// which options carry the selected attribute. A multiple-select yields an
+// array, matching what React expects.
+func selectDefaultValue(sel *html.Node) (string, bool) {
+	var chosen []string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			if child.Type == html.ElementNode {
+				if child.Data == "option" && hasAttrFold(child, "selected") {
+					chosen = append(chosen, optionValue(child))
+				}
+				walk(child)
+			}
+		}
+	}
+	walk(sel)
+
+	if len(chosen) == 0 {
+		return "", false
+	}
+
+	if hasAttrFold(sel, "multiple") {
+		quoted := make([]string, 0, len(chosen))
+		for _, v := range chosen {
+			quoted = append(quoted, jsStringLiteral(v))
+		}
+		return "{[" + strings.Join(quoted, ", ") + "]}", true
+	}
+	return "{" + jsStringLiteral(chosen[0]) + "}", true
+}
+
+// optionValue is the value an <option> submits: its value attribute when
+// present, otherwise its text content.
+func optionValue(option *html.Node) string {
+	for _, attr := range option.Attr {
+		if strings.EqualFold(attr.Key, "value") {
+			return attr.Val
+		}
+	}
+	return strings.TrimSpace(elementText(option))
+}
+
+// elementText concatenates an element's descendant text.
+func elementText(n *html.Node) string {
+	var b strings.Builder
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			switch child.Type {
+			case html.TextNode:
+				b.WriteString(child.Data)
+			case html.ElementNode:
+				walk(child)
+			}
+		}
+	}
+	walk(n)
+	return b.String()
+}
+
+func hasAttrFold(n *html.Node, key string) bool {
+	for _, attr := range n.Attr {
+		if strings.EqualFold(attr.Key, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// jsStringLiteral renders a Go string as a double-quoted JS string literal.
+// Go's quoting rules produce valid JS for this purpose, and preserve newlines
+// and tabs as escapes so whitespace-significant content survives.
+func jsStringLiteral(s string) string {
+	return strconv.Quote(s)
 }
