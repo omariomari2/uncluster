@@ -22,6 +22,7 @@ type EJSProjectConfig struct {
 	InlineJS    []extractor.InlineResource
 	ExternalCSS []fetcher.FetchedResource
 	ExternalJS  []fetcher.FetchedResource
+	LocalAssets []extractor.LocalAsset
 }
 
 type ejsComponent struct {
@@ -81,7 +82,7 @@ func GenerateEJSProject(config *EJSProjectConfig) (*ProjectFiles, error) {
 		}
 	}
 
-	return &ProjectFiles{Files: files}, nil
+	return &ProjectFiles{Files: files, Binary: localAssetFiles(config.LocalAssets, "public")}, nil
 }
 
 func generateEJSPackageJSON(config *EJSProjectConfig) (string, error) {

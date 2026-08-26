@@ -145,3 +145,43 @@ func TestComponentNamesAreUnique(t *testing.T) {
 		t.Errorf("expected 3 components, got %v", got)
 	}
 }
+
+// MainComponent used to be a flat fragment of components, which silently
+// dropped everything around and between them: the page wrapper that
+// selectComponentRoot descended through, and the landmarks that
+// expandLayoutContainers expanded. Composing in place keeps that structure.
+func TestMainComponentPreservesSurroundingMarkup(t *testing.T) {
+	_, main, _, err := generateTSXViews(`
+		<html><body><div class="container" id="top">
+			<header class="site-header">h</header>
+			<main>
+				<section id="hero">a</section>
+				<aside class="sidebar">c</aside>
+			</main>
+			<footer class="site-footer">f</footer>
+		</div></body></html>`, "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("generateTSXViews() error = %v", err)
+	}
+
+	for _, want := range []string{
+		// The wrapper selectComponentRoot descends through.
+		`<div className="container" id="top">`,
+		// The landmark whose children became components.
+		"<main>",
+		// Components sit where their markup was.
+		"<SiteHeader />",
+		"<Hero />",
+		"<Sidebar />",
+		"<SiteFooter />",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("MainComponent missing %q; got:\n%s", want, main)
+		}
+	}
+
+	// No placeholder may survive into the output.
+	if strings.Contains(main, componentMarkerTag) {
+		t.Errorf("component placeholder leaked into output; got:\n%s", main)
+	}
+}

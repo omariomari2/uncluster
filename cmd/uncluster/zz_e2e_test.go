@@ -28,17 +28,22 @@ func TestE2EAlre(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bundle: %v", err)
 	}
-	t.Logf("bundle site=%s index=%s", result.SiteName, result.IndexPath)
+	t.Logf("bundle site=%s index=%s split=%s", result.SiteName, result.IndexPath, result.SplitDir)
 
-	raw, err := os.ReadFile(result.IndexPath)
+	// Use the rewritten index, not the untouched source: bundle localizes the
+	// asset references into it, and feeding the original back in would throw
+	// that away.
+	rewritten := filepath.Join(result.SplitDir, "index.html")
+	raw, err := os.ReadFile(rewritten)
 	if err != nil {
-		t.Fatalf("read index: %v", err)
+		t.Fatalf("read rewritten index: %v", err)
 	}
 	html := string(raw)
 	t.Logf("source index.html: %d bytes", len(raw))
 
 	// 2..4: the same three CLI modes, into their own subfolders.
+	srcDir := result.SplitDir
 	runFormat(html, filepath.Join(outRoot, "formatted-html"))
-	runNodeJSEJS(html, filepath.Join(outRoot, "ejs-project"))
-	runNodeJS(html, filepath.Join(outRoot, "tsx-project"))
+	runNodeJSEJS(html, srcDir, filepath.Join(outRoot, "ejs-project"))
+	runNodeJS(html, srcDir, filepath.Join(outRoot, "tsx-project"))
 }

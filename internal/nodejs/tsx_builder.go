@@ -99,7 +99,76 @@ func generateTSXViews(
 		sectionFiles["src/components/"+comp.Name+".tsx"] = tsxContent
 	}
 
-	return sectionFiles, generateMainComponentTSX(resolved), generateMainTsx(inlineCSS, inlineJS, externalCSS, externalJS), nil
+	main, mainErr := buildMainComponent(body, resolved)
+	if mainErr != nil {
+		log.Printf("tsx_builder: falling back to a flat component list: %v", mainErr)
+		main = generateMainComponentTSX(resolved)
+	}
+
+	return sectionFiles, main, generateMainTsx(inlineCSS, inlineJS, externalCSS, externalJS), nil
+}
+
+// componentMarkerTag is the placeholder element left where a component was
+// lifted out. It has to be an element rather than a comment: the converter
+// drops an element whose only children are comments, which would erase the
+// markers along with the structure they sit in.
+const componentMarkerTag = "uncluster-component"
+
+// buildMainComponent converts the whole body, with each extracted section
+// replaced in place by its component. Composing this way keeps the markup that
+// surrounds and nests the sections — page wrappers, <main>, layout containers —
+// which a flat list of components would silently drop.
+func buildMainComponent(body *html.Node, components []tsxComponent) (string, error) {
+	for _, comp := range components {
+		replaceNodeWithComponentMarker(comp.Node, comp.Name)
+	}
+
+	bodyHTML, err := renderNodeHTML(body)
+	if err != nil {
+		return "", fmt.Errorf("render body for main component: %w", err)
+	}
+
+	converted, err := converter.ConvertSectionToTSX(bodyHTML, "MainComponent")
+	if err != nil {
+		return "", fmt.Errorf("convert body for main component: %w", err)
+	}
+
+	var imports strings.Builder
+	seen := make(map[string]bool)
+	for _, comp := range components {
+		if seen[comp.Name] {
+			continue
+		}
+		seen[comp.Name] = true
+		imports.WriteString(fmt.Sprintf("import %s from './%s'\n", comp.Name, comp.Name))
+		converted = strings.ReplaceAll(converted, componentMarkerJSX(comp.Name), "<"+comp.Name+" />")
+	}
+
+	const reactImport = "import React from 'react'\n"
+	if idx := strings.Index(converted, reactImport); idx != -1 {
+		at := idx + len(reactImport)
+		converted = converted[:at] + imports.String() + converted[at:]
+	}
+	return converted, nil
+}
+
+func replaceNodeWithComponentMarker(n *html.Node, name string) {
+	if n.Parent == nil {
+		return
+	}
+	marker := &html.Node{
+		Type: html.ElementNode,
+		Data: componentMarkerTag,
+		Attr: []html.Attribute{{Key: "data-name", Val: name}},
+	}
+	n.Parent.InsertBefore(marker, n)
+	n.Parent.RemoveChild(n)
+}
+
+// componentMarkerJSX is how the placeholder element comes back out of the
+// converter: an element with no children renders as an open/close pair.
+func componentMarkerJSX(name string) string {
+	return fmt.Sprintf(`<%s data-name="%s"></%s>`, componentMarkerTag, name, componentMarkerTag)
 }
 
 func toPascalCase(s string) string {

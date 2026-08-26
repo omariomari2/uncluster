@@ -8,6 +8,7 @@ import (
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/formatter"
 	"github.com/omariomari2/uncluster/internal/nodejs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,9 +135,9 @@ func main() {
 	case "split":
 		runSplit(htmlContent, inputAbs, resolveOutDir(outDir, "split-output"))
 	case "nodejs":
-		runNodeJS(htmlContent, resolveOutDir(outDir, "nodejs-project"))
+		runNodeJS(htmlContent, filepath.Dir(inputAbs), resolveOutDir(outDir, "nodejs-project"))
 	case "nodejs-ejs":
-		runNodeJSEJS(htmlContent, resolveOutDir(outDir, "nodejs-ejs-project"))
+		runNodeJSEJS(htmlContent, filepath.Dir(inputAbs), resolveOutDir(outDir, "nodejs-ejs-project"))
 	case "bundle":
 		runBundle(inputAbs, resolveOutDir(outDir, "bundle-output"), destDir)
 	}
@@ -296,7 +297,9 @@ func runSplit(htmlContent, inputAbs, outDir string) {
 
 // --- nodejs ---
 
-func runNodeJS(htmlContent, outDir string) {
+func runNodeJS(htmlContent, srcDir, outDir string) {
+	htmlContent, localAssets := localizeAssets(htmlContent, srcDir)
+
 	extracted, err := extractor.Extract(htmlContent)
 	if err != nil {
 		fail("extract resources", err)
@@ -312,6 +315,7 @@ func runNodeJS(htmlContent, outDir string) {
 		JS:          extracted.JS,
 		ExternalCSS: extracted.ExternalCSS,
 		ExternalJS:  extracted.ExternalJS,
+		LocalAssets: localAssets,
 	}
 
 	projectFiles, err := nodejs.GenerateProject(config)
@@ -330,13 +334,22 @@ func runNodeJS(htmlContent, outDir string) {
 		}
 	}
 
+	for relPath, content := range projectFiles.Binary {
+		p := filepath.Join(outDir, filepath.FromSlash(relPath))
+		if err := writeBinaryFile(p, content); err != nil {
+			fail("write "+relPath, err)
+		}
+	}
+
 	fmt.Printf("Node.js project generated: %s\n", outDir)
 	fmt.Printf("  cd %s && npm install && npm run dev\n", outDir)
 }
 
 // --- nodejs-ejs ---
 
-func runNodeJSEJS(htmlContent, outDir string) {
+func runNodeJSEJS(htmlContent, srcDir, outDir string) {
+	htmlContent, localAssets := localizeAssets(htmlContent, srcDir)
+
 	extracted, err := extractor.Extract(htmlContent)
 	if err != nil {
 		fail("extract resources", err)
@@ -352,6 +365,7 @@ func runNodeJSEJS(htmlContent, outDir string) {
 		InlineJS:    extracted.InlineJS,
 		ExternalCSS: extracted.ExternalCSS,
 		ExternalJS:  extracted.ExternalJS,
+		LocalAssets: localAssets,
 	}
 
 	projectFiles, err := nodejs.GenerateEJSProject(config)
@@ -366,6 +380,13 @@ func runNodeJSEJS(htmlContent, outDir string) {
 	for relPath, content := range projectFiles.Files {
 		p := filepath.Join(outDir, filepath.FromSlash(relPath))
 		if err := writeFile(p, content); err != nil {
+			fail("write "+relPath, err)
+		}
+	}
+
+	for relPath, content := range projectFiles.Binary {
+		p := filepath.Join(outDir, filepath.FromSlash(relPath))
+		if err := writeBinaryFile(p, content); err != nil {
 			fail("write "+relPath, err)
 		}
 	}
@@ -410,4 +431,27 @@ func writeFile(path string, content string) error {
 func fail(step string, err error) {
 	fmt.Fprintf(os.Stderr, "uncluster: %s: %v\n", step, err)
 	os.Exit(1)
+}
+
+func writeBinaryFile(path string, content []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, content, 0o644)
+}
+
+// localizeAssets rewrites references to files sitting beside the input HTML so
+// the generated project carries them, instead of pointing back at the origin
+// site. A failure here is not fatal: the project is still generated, just
+// without local copies.
+func localizeAssets(htmlContent, srcDir string) (string, []extractor.LocalAsset) {
+	if srcDir == "" {
+		return htmlContent, nil
+	}
+	rewritten, assets, err := bundle.LocalizeAssets(htmlContent, srcDir)
+	if err != nil {
+		log.Printf("uncluster: could not localize assets from %s: %v", srcDir, err)
+		return htmlContent, nil
+	}
+	return rewritten, assets
 }

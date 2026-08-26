@@ -1,11 +1,17 @@
 package nodejs
 
 import (
+	"bytes"
 	"fmt"
-	"github.com/omariomari2/uncluster/internal/fetcher"
 	"log"
 	"strings"
 	"text/template"
+
+	"github.com/omariomari2/uncluster/internal/extractor"
+	"github.com/omariomari2/uncluster/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/htmlutil"
+
+	"golang.org/x/net/html"
 )
 
 type ProjectConfig struct {
@@ -15,10 +21,14 @@ type ProjectConfig struct {
 	JS          string
 	ExternalCSS []fetcher.FetchedResource
 	ExternalJS  []fetcher.FetchedResource
+	LocalAssets []extractor.LocalAsset
 }
 
 type ProjectFiles struct {
 	Files map[string]string
+
+	// Binary holds files that are not text, keyed the same way as Files.
+	Binary map[string][]byte
 }
 
 func GenerateProject(config *ProjectConfig) (*ProjectFiles, error) {
@@ -47,9 +57,11 @@ func GenerateProject(config *ProjectConfig) (*ProjectFiles, error) {
 
 	organizeSourceFiles(config, files)
 
-	log.Printf("✅ Generated %d files for Node.js project", len(files))
+	binary := localAssetFiles(config.LocalAssets, "public")
 
-	return &ProjectFiles{Files: files}, nil
+	log.Printf("✅ Generated %d files for Node.js project", len(files)+len(binary))
+
+	return &ProjectFiles{Files: files, Binary: binary}, nil
 }
 
 func generatePackageJSON(config *ProjectConfig) (string, error) {
@@ -87,10 +99,74 @@ func generateIndexHTML(config *ProjectConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	title, headMeta := documentHead(config.HTML)
+	if strings.TrimSpace(title) == "" {
+		title = config.ProjectName
+	}
+
 	var buf strings.Builder
-	err = tmpl.Execute(&buf, config)
-	result := buf.String()
-	return result, err
+	err = tmpl.Execute(&buf, struct {
+		ProjectName string
+		Title       string
+		HeadMeta    string
+	}{
+		ProjectName: config.ProjectName,
+		Title:       title,
+		HeadMeta:    headMeta,
+	})
+	return buf.String(), err
+}
+
+// documentHead returns the source page's title and the <head> elements worth
+// carrying into the generated shell. The body becomes components, so without
+// this the page loses its identity: title, description, Open Graph tags,
+// canonical URL and icons all live in <head>.
+//
+// Stylesheets and scripts are excluded because main.tsx already imports the
+// former and loads the latter; re-emitting them here would double-load them.
+func documentHead(htmlContent string) (title string, meta string) {
+	doc, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		return "", ""
+	}
+	head := htmlutil.FindElement(doc, "head")
+	if head == nil {
+		return "", ""
+	}
+
+	var b strings.Builder
+	for child := head.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type != html.ElementNode {
+			continue
+		}
+		switch child.Data {
+		case "title":
+			title = strings.TrimSpace(htmlutil.TextContent(child))
+		case "meta":
+			if htmlutil.HasAttr(child, "charset") {
+				continue
+			}
+			if strings.EqualFold(htmlutil.GetAttr(child, "name"), "viewport") {
+				continue
+			}
+			writeHeadElement(&b, child)
+		case "link":
+			if strings.Contains(strings.ToLower(htmlutil.GetAttr(child, "rel")), "stylesheet") {
+				continue
+			}
+			writeHeadElement(&b, child)
+		}
+	}
+	return title, b.String()
+}
+
+func writeHeadElement(b *strings.Builder, n *html.Node) {
+	var rendered bytes.Buffer
+	if err := html.Render(&rendered, n); err != nil {
+		return
+	}
+	b.WriteString("    " + rendered.String() + "\n")
 }
 
 func organizeSourceFiles(config *ProjectConfig, files map[string]string) {
@@ -152,4 +228,21 @@ export default MainComponent
 
 func cssForPublicAssets(content string) string {
 	return strings.ReplaceAll(content, "../../assets/", "/assets/")
+}
+
+// localAssetFiles places a page's referenced images, fonts and other binaries
+// under the project's public directory, keeping the relative layout the HTML
+// already points at.
+func localAssetFiles(assets []extractor.LocalAsset, publicDir string) map[string][]byte {
+	if len(assets) == 0 {
+		return nil
+	}
+	out := make(map[string][]byte, len(assets))
+	for _, asset := range assets {
+		if len(asset.Content) == 0 {
+			continue
+		}
+		out[publicDir+"/"+asset.Path] = asset.Content
+	}
+	return out
 }

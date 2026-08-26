@@ -474,23 +474,50 @@ func resolveLocalRef(rawRef, baseDir, rootDir string) (string, bool) {
 	if ref == "" || strings.HasPrefix(ref, "#") {
 		return "", false
 	}
-	if parsed, err := url.Parse(ref); err == nil {
-		if parsed.Scheme != "" || parsed.Host != "" {
-			return "", false
-		}
-		ref = parsed.Path
-	}
-	ref = strings.TrimPrefix(ref, "/")
-	if ref == "" {
+
+	parsed, err := url.Parse(ref)
+	if err != nil {
 		return "", false
 	}
 
-	candidate := filepath.Clean(filepath.Join(baseDir, filepath.FromSlash(ref)))
+	// Site archivers keep absolute URLs in the markup while storing the files
+	// under a directory named for the host (alre.com/wp-content/...). Map the
+	// URL back onto that layout so those assets localize like relative ones.
+	// Without this the whole feature no-ops on most real archives.
+	if parsed.Host != "" {
+		return existingFileUnder(rootDir, filepath.Join(parsed.Host, filepath.FromSlash(parsed.Path)))
+	}
+
+	// data:, mailto:, javascript: and friends are not files.
+	if parsed.Scheme != "" {
+		return "", false
+	}
+
+	ref = strings.TrimPrefix(parsed.Path, "/")
+	if ref == "" {
+		return "", false
+	}
+	return existingFileUnder(rootDir, relativeTo(baseDir, rootDir, ref))
+}
+
+// relativeTo resolves a document-relative reference against the directory
+// holding the document, expressed relative to rootDir.
+func relativeTo(baseDir, rootDir, ref string) string {
+	joined := filepath.Clean(filepath.Join(baseDir, filepath.FromSlash(ref)))
+	if rel, err := filepath.Rel(rootDir, joined); err == nil {
+		return rel
+	}
+	return joined
+}
+
+// existingFileUnder resolves relPath inside rootDir, returning the absolute
+// path only if it names an existing file that has not escaped the root.
+func existingFileUnder(rootDir, relPath string) (string, bool) {
 	rootAbs, err := filepath.Abs(rootDir)
 	if err != nil {
 		return "", false
 	}
-	candidateAbs, err := filepath.Abs(candidate)
+	candidateAbs, err := filepath.Abs(filepath.Join(rootAbs, relPath))
 	if err != nil {
 		return "", false
 	}
@@ -523,8 +550,17 @@ func assetOutputPath(absPath, htmlDir string) string {
 	rel = filepath.ToSlash(filepath.Clean(rel))
 	rel = strings.TrimPrefix(rel, "../")
 	rel = strings.TrimPrefix(rel, "/")
-	return path.Join("assets", rel)
+
+	// Localizing an already-localized page must not nest a second assets/
+	// directory under the first, or the markup's existing references stop
+	// matching where the files land.
+	if rel == assetDir || strings.HasPrefix(rel, assetDir+"/") {
+		return rel
+	}
+	return path.Join(assetDir, rel)
 }
+
+const assetDir = "assets"
 
 type srcsetItem struct {
 	url        string
@@ -856,4 +892,25 @@ func normalizeForMatch(value string) string {
 		}
 	}
 	return b.String()
+}
+
+// LocalizeAssets rewrites htmlContent so that references to files sitting
+// beside it point at a local assets/ directory, and returns those files so the
+// caller can write them next to whatever it generates.
+//
+// It exists so the nodejs and EJS generators can carry a page's images, fonts
+// and stylesheets the same way bundle mode does, instead of leaving the output
+// pointing at the origin site. Reference following is recursive: a stylesheet's
+// url() and @import targets are collected too.
+func LocalizeAssets(htmlContent, htmlDir string) (string, []extractor.LocalAsset, error) {
+	rewritten, assets, err := rewriteLocalAssets(htmlContent, htmlDir, htmlDir)
+	if err != nil {
+		return "", nil, err
+	}
+
+	out := make([]extractor.LocalAsset, 0, len(assets))
+	for _, asset := range assets {
+		out = append(out, extractor.LocalAsset{Path: asset.Path, Content: asset.Content})
+	}
+	return rewritten, out, nil
 }

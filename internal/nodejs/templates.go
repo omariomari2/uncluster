@@ -82,8 +82,19 @@ const PORT = process.env.PORT || 8080
 
 app.use(express.static(distPath))
 
-app.get('*', (req, res) => {
+// Only extensionless paths fall through to the app shell. A request for a file
+// that does not exist has to 404: sending index.html for it would return 200
+// with the wrong content type, so a missing stylesheet or script would fail
+// silently in the browser instead of showing up.
+app.get('*', (req, res, next) => {
+  if (path.extname(req.path)) {
+    return next()
+  }
   res.sendFile(path.join(distPath, 'index.html'))
+})
+
+app.use((req, res) => {
+  res.status(404).type('text/plain').send('Not found: ' + req.path)
 })
 
 app.listen(PORT, () => {
@@ -387,8 +398,8 @@ const indexHtmlTemplate = `<!DOCTYPE html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{.ProjectName}}</title>
-  </head>
+    <title>{{.Title}}</title>
+{{.HeadMeta}}  </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/main.tsx"></script>

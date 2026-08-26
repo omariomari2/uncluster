@@ -146,3 +146,59 @@ func expectFile(t *testing.T, path string) {
 		t.Fatalf("expected file %s, got directory", path)
 	}
 }
+
+// Site archivers keep absolute URLs in the markup and store the files under a
+// host-named directory. resolveLocalRef used to reject anything with a scheme
+// or host, so asset localization silently no-opped on most real archives: the
+// existing fixtures all used relative paths, and the feature passed its own
+// test while doing nothing.
+func TestProcessZipLocalizesAbsoluteURLAssets(t *testing.T) {
+	workDir := t.TempDir()
+	zipPath := filepath.Join(workDir, "example.com.zip")
+	createTestZip(t, zipPath, map[string]string{
+		"example.com/index.html": `<!doctype html><html><head>` +
+			`<link rel="stylesheet" href="https://example.com/css/site.css">` +
+			`</head><body>` +
+			`<img src="https://example.com/images/logo.png">` +
+			`<img src="//example.com/images/proto.png">` +
+			`</body></html>`,
+		// site.css pulls in another stylesheet, which pulls in a font: the
+		// chain has to be followed, not just the first level.
+		"example.com/css/site.css":   `@import url("reset.css"); body{background:url("../images/bg.png")}`,
+		"example.com/css/reset.css":  `@font-face{src:url("../fonts/f.woff2")}`,
+		"example.com/fonts/f.woff2":  "font",
+		"example.com/images/logo.png": "logo",
+		"example.com/images/proto.png": "proto",
+		"example.com/images/bg.png":   "bg",
+		"example.com/images/unused.png": "unused",
+	})
+
+	result, err := Process(zipPath, filepath.Join(workDir, "out"))
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+
+	for _, rel := range []string{
+		filepath.Join("assets", "css", "site.css"),
+		filepath.Join("assets", "css", "reset.css"),
+		filepath.Join("assets", "fonts", "f.woff2"),
+		filepath.Join("assets", "images", "logo.png"),
+		filepath.Join("assets", "images", "proto.png"),
+		filepath.Join("assets", "images", "bg.png"),
+	} {
+		expectFile(t, filepath.Join(result.OutputDir, "unzip", rel))
+	}
+
+	if _, err := os.Stat(filepath.Join(result.OutputDir, "unzip", "assets", "images", "unused.png")); !os.IsNotExist(err) {
+		t.Errorf("unreferenced asset should not be copied")
+	}
+
+	// The markup must point at the local copies, not back at the origin.
+	index, err := os.ReadFile(filepath.Join(result.OutputDir, "unzip", "index.html"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	if strings.Contains(string(index), "https://example.com/") {
+		t.Errorf("index.html still references the origin:\n%s", index)
+	}
+}
