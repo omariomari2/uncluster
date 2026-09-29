@@ -18,6 +18,7 @@ var jsxAttributeMap = map[string]string{
 	"for":             "htmlFor",
 	"tabindex":        "tabIndex",
 	"readonly":        "readOnly",
+	"srcset":          "srcSet",
 	"maxlength":       "maxLength",
 	"cellpadding":     "cellPadding",
 	"cellspacing":     "cellSpacing",
@@ -34,8 +35,12 @@ var jsxAttributeMap = map[string]string{
 	"autoplay":        "autoPlay",
 	"enctype":         "encType",
 	"formaction":      "formAction",
+	"formnovalidate":  "formNoValidate",
 	"hreflang":        "hrefLang",
 	"inputmode":       "inputMode",
+	"itemscope":       "itemScope",
+	"novalidate":      "noValidate",
+	"playsinline":     "playsInline",
 	"usemap":          "useMap",
 	// SVG presentation
 	"fill-rule":                   "fillRule",
@@ -197,6 +202,11 @@ func (c *JSXConverter) convertAttribute(attr html.Attribute) (string, string) {
 	if isBoolean {
 		return key, "{true}"
 	}
+	if jsxNumericAttributes[strings.ToLower(attr.Key)] {
+		if _, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+			return key, "{" + strings.TrimSpace(val) + "}"
+		}
+	}
 
 	return key, fmt.Sprintf(`"%s"`, escapeJSXAttribute(val))
 }
@@ -255,6 +265,19 @@ var jsxBooleanAttributes = map[string]bool{
 	"selected":        true,
 }
 
+var jsxNumericAttributes = map[string]bool{
+	"cols":      true,
+	"colspan":   true,
+	"maxlength": true,
+	"minlength": true,
+	"rows":      true,
+	"rowspan":   true,
+	"size":      true,
+	"span":      true,
+	"start":     true,
+	"tabindex":  true,
+}
+
 func escapeJSXAttribute(value string) string {
 	return jsxAttributeEscaper.Replace(value)
 }
@@ -293,6 +316,14 @@ func (c *JSXConverter) convertStyle(style string) string {
 }
 
 func (c *JSXConverter) kebabToCamel(s string) string {
+	if strings.HasPrefix(s, "-ms-") {
+		rest := c.kebabToCamel(strings.TrimPrefix(s, "-ms-"))
+		if rest == "" {
+			return "ms"
+		}
+		return "ms" + strings.ToUpper(rest[:1]) + rest[1:]
+	}
+
 	parts := strings.Split(s, "-")
 	if len(parts) == 1 {
 		return s
@@ -340,9 +371,7 @@ func ConvertSectionToTSX(htmlFragment, componentName string) (string, error) {
 	if len(roots) == 1 {
 		c.renderElementIndented(&jsxBuf, roots[0], 2)
 		jsx := strings.TrimRight(jsxBuf.String(), "\n")
-		return fmt.Sprintf(`import React from 'react'
-
-%sfunction %s(): JSX.Element {
+		return fmt.Sprintf(`%sfunction %s(): JSX.Element {
   return (
 %s
   )
@@ -356,9 +385,7 @@ export default %s
 		c.renderElementIndented(&jsxBuf, root, 3)
 	}
 	jsx := strings.TrimRight(jsxBuf.String(), "\n")
-	return fmt.Sprintf(`import React from 'react'
-
-%sfunction %s(): JSX.Element {
+	return fmt.Sprintf(`%sfunction %s(): JSX.Element {
   return (
     <>
 %s
@@ -368,6 +395,97 @@ export default %s
 
 export default %s
 `, handlerComment, componentName, jsx, componentName), nil
+}
+
+// ConvertSectionToHydrationHTML renders the static body markup that React will
+// hydrate. It applies the same whitespace and skipped-node rules as the TSX
+// renderer so the browser DOM and the component's first render start equal.
+func ConvertSectionToHydrationHTML(htmlFragment string) (string, error) {
+	doc, err := html.Parse(strings.NewReader(htmlFragment))
+	if err != nil {
+		return "", fmt.Errorf("failed to render hydration HTML: %w", err)
+	}
+
+	body := findBodyNode(doc)
+	if body == nil {
+		return "", nil
+	}
+
+	var buf strings.Builder
+	for child := body.FirstChild; child != nil; child = child.NextSibling {
+		clone := cloneHydrationNode(child, false, false)
+		if clone == nil {
+			continue
+		}
+		if err := html.Render(&buf, clone); err != nil {
+			return "", fmt.Errorf("render hydration node: %w", err)
+		}
+	}
+	return buf.String(), nil
+}
+
+func cloneHydrationNode(n *html.Node, inline, preserveWhitespace bool) *html.Node {
+	switch n.Type {
+	case html.TextNode:
+		text := n.Data
+		switch {
+		case preserveWhitespace:
+		case inline:
+			text = normalizeInlineText(text)
+		default:
+			text = strings.TrimSpace(text)
+		}
+		if text == "" {
+			return nil
+		}
+		return &html.Node{Type: html.TextNode, Data: text}
+	case html.CommentNode:
+		// JSX comments are source comments and do not create DOM nodes.
+		return nil
+	case html.ElementNode:
+		if skipElements[n.Data] {
+			return nil
+		}
+	default:
+		return nil
+	}
+
+	clone := &html.Node{Type: html.ElementNode, Data: n.Data, Namespace: n.Namespace}
+	for _, attr := range n.Attr {
+		// React attaches event handlers during hydration; server markup does not
+		// contain executable on* attributes.
+		if _, isEvent := jsxEventMap[strings.ToLower(attr.Key)]; isEvent {
+			continue
+		}
+		clone.Attr = append(clone.Attr, attr)
+	}
+
+	if voidElements[n.Data] {
+		return clone
+	}
+
+	if !hasElemChild(n) && !preserveWhitespaceElements[n.Data] {
+		var text strings.Builder
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			if child.Type == html.TextNode {
+				text.WriteString(strings.TrimSpace(child.Data))
+			}
+		}
+		if text.Len() > 0 {
+			clone.AppendChild(&html.Node{Type: html.TextNode, Data: text.String()})
+		}
+		return clone
+	}
+
+	childrenInline := hasElemChild(n) && isInlineContent(n)
+	childrenPreserveWhitespace := preserveWhitespaceElements[n.Data]
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		childClone := cloneHydrationNode(child, childrenInline, childrenPreserveWhitespace)
+		if childClone != nil {
+			clone.AppendChild(childClone)
+		}
+	}
+	return clone
 }
 
 // collectHandlerNames walks the node tree and returns the distinct function

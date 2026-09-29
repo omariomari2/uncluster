@@ -313,6 +313,7 @@ func runNodeJS(htmlContent, srcDir, outDir string) {
 		HTML:        rewrittenHTML,
 		CSS:         extracted.CSS,
 		JS:          extracted.JS,
+		InlineJS:    extracted.InlineJS,
 		ExternalCSS: extracted.ExternalCSS,
 		ExternalJS:  extracted.ExternalJS,
 		LocalAssets: localAssets,

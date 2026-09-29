@@ -21,6 +21,7 @@ type ExtractedContent struct {
 	ExternalCSS []fetcher.FetchedResource
 	ExternalJS  []fetcher.FetchedResource
 	LocalAssets []LocalAsset
+	Capture     *CaptureManifest
 }
 
 // InlineResource is an alias so callers keep using extractor.InlineResource
@@ -56,6 +57,11 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 		externalJS = fetcher.FetchExternalResources(jsURLs, "js")
 	}
 
+	capture := NewCaptureManifest("")
+	addFetchedCaptureAssets(capture, externalCSS, "external/css/", "css")
+	addFetchedCaptureAssets(capture, externalJS, "external/js/", "js")
+	addRetainedCaptureAssets(doc, capture)
+
 	rewriteLinks(doc, externalCSS, externalJS)
 
 	var buf bytes.Buffer
@@ -76,7 +82,55 @@ func Extract(htmlContent string) (*ExtractedContent, error) {
 		InlineJS:    inline.InlineJS,
 		ExternalCSS: externalCSS,
 		ExternalJS:  externalJS,
+		Capture:     capture,
 	}, nil
+}
+
+func addFetchedCaptureAssets(capture *CaptureManifest, resources []fetcher.FetchedResource, dir, assetType string) {
+	for _, resource := range resources {
+		if resource.Error == nil && resource.Content != "" {
+			capture.AddAsset(CaptureAsset{
+				URL: resource.URL, Path: dir + resource.Filename,
+				Type: assetType, Status: CaptureLocalized,
+			})
+			continue
+		}
+		message := "empty response body"
+		if resource.Error != nil {
+			message = resource.Error.Error()
+		}
+		capture.AddAsset(CaptureAsset{
+			URL: resource.URL, Type: assetType, Status: CaptureFailed, Error: message,
+		})
+	}
+}
+
+func addRetainedCaptureAssets(doc *html.Node, capture *CaptureManifest) {
+	seen := make(map[string]bool)
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			var rawURL, assetType string
+			switch n.Data {
+			case "link":
+				href := htmlutil.GetAttr(n, "href")
+				if strings.Contains(strings.ToLower(htmlutil.GetAttr(n, "rel")), "stylesheet") && htmlutil.IsGoogleFonts(href) {
+					rawURL, assetType = href, "css"
+				}
+			case "iframe":
+				rawURL, assetType = htmlutil.GetAttr(n, "src"), "iframe"
+			}
+			key := assetType + "\x00" + rawURL
+			if assetType != "" && isExternalURL(rawURL) && !seen[key] {
+				seen[key] = true
+				capture.AddAsset(CaptureAsset{URL: rawURL, Type: assetType, Status: CaptureRetainedExternal})
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(doc)
 }
 
 func findExternalResourceURLs(doc *html.Node) ([]string, []string) {
@@ -118,7 +172,7 @@ func rewriteLinks(n *html.Node, externalCSS, externalJS []fetcher.FetchedResourc
 			href := htmlutil.GetAttr(n, "href")
 			if href != "" && isExternalURL(href) {
 				for _, resource := range externalCSS {
-					if resource.URL == href && resource.Error == nil {
+					if resource.URL == href && resource.Error == nil && resource.Content != "" {
 						htmlutil.SetAttr(n, "href", "external/css/"+resource.Filename)
 						break
 					}
@@ -128,7 +182,7 @@ func rewriteLinks(n *html.Node, externalCSS, externalJS []fetcher.FetchedResourc
 			src := htmlutil.GetAttr(n, "src")
 			if src != "" && isExternalURL(src) {
 				for _, resource := range externalJS {
-					if resource.URL == src && resource.Error == nil {
+					if resource.URL == src && resource.Error == nil && resource.Content != "" {
 						htmlutil.SetAttr(n, "src", "external/js/"+resource.Filename)
 						break
 					}

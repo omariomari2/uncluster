@@ -59,6 +59,22 @@ func TestConvertSectionToTSXTreatsPresenceOnlyBooleanAttributesAsTrue(t *testing
 	}
 }
 
+func TestConvertSectionToTSXUsesReactSrcSetAttribute(t *testing.T) {
+	got := convertListForTest(t, `<img srcset="small.png 1x, large.png 2x">`)
+
+	if !strings.Contains(got, `srcSet="small.png 1x, large.png 2x"`) {
+		t.Fatalf("srcset was not emitted as React's srcSet property; got:\n%s", got)
+	}
+}
+
+func TestConvertSectionToTSXDoesNotImportUnusedReactBinding(t *testing.T) {
+	got := convertListForTest(t, `<span>content</span>`)
+
+	if strings.Contains(got, "import React") {
+		t.Fatalf("generated component contains an unused React import; got:\n%s", got)
+	}
+}
+
 func TestConvertSectionToTSXEscapesAttributeAndTextSyntax(t *testing.T) {
 	got := convertListForTest(t, `<span title="say &quot;hi&quot; &amp; {x}">a &amp; b {y}</span>`)
 
@@ -76,6 +92,16 @@ func TestConvertStyleEscapesQuotesInValues(t *testing.T) {
 	c := &JSXConverter{}
 	got := c.convertStyle(`font-family: 'Times New Roman'`)
 	want := `{{fontFamily: '\'Times New Roman\''}}`
+
+	if got != want {
+		t.Fatalf("convertStyle() = %s, want %s", got, want)
+	}
+}
+
+func TestConvertStyleUsesReactCasingForMSVendorPrefix(t *testing.T) {
+	c := &JSXConverter{}
+	got := c.convertStyle(`-ms-grid-row: 2; -webkit-line-clamp: 3`)
+	want := `{{msGridRow: '2', WebkitLineClamp: '3'}}`
 
 	if got != want {
 		t.Fatalf("convertStyle() = %s, want %s", got, want)

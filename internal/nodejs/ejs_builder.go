@@ -123,6 +123,7 @@ func generateEJSViews(htmlContent string) (string, map[string]string, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	rootEJSAssetURLs(doc)
 
 	body := htmlutil.FindElement(doc, "body")
 	if body == nil {
@@ -194,6 +195,52 @@ func generateEJSViews(htmlContent string) (string, map[string]string, error) {
 	}
 
 	return rendered, partials, nil
+}
+
+// rootEJSAssetURLs makes localized resources independent of the request URL.
+// Express renders the same view for nested extensionless routes, where a
+// relative "assets/..." reference would otherwise resolve below that route.
+func rootEJSAssetURLs(doc *html.Node) {
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			for i := range n.Attr {
+				attr := &n.Attr[i]
+				switch strings.ToLower(attr.Key) {
+				case "src", "href", "poster", "data-src":
+					attr.Val = rootEJSAssetPath(attr.Val)
+				case "srcset":
+					attr.Val = rootEJSSrcset(attr.Val)
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(doc)
+}
+
+func rootEJSAssetPath(value string) string {
+	for _, prefix := range []string{"assets/", "inline/", "external/"} {
+		if strings.HasPrefix(value, prefix) {
+			return "/" + value
+		}
+	}
+	return value
+}
+
+func rootEJSSrcset(value string) string {
+	candidates := strings.Split(value, ",")
+	for i, candidate := range candidates {
+		fields := strings.Fields(strings.TrimSpace(candidate))
+		if len(fields) == 0 {
+			continue
+		}
+		fields[0] = rootEJSAssetPath(fields[0])
+		candidates[i] = strings.Join(fields, " ")
+	}
+	return strings.Join(candidates, ", ")
 }
 
 func collectBodyComponents(root *html.Node) []ejsComponent {

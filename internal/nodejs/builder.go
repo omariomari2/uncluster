@@ -3,10 +3,15 @@ package nodejs
 import (
 	"bytes"
 	"fmt"
+	stdhtml "html"
 	"log"
+	"net/url"
+	pathpkg "path"
+	"regexp"
 	"strings"
 	"text/template"
 
+	"github.com/omariomari2/uncluster/internal/converter"
 	"github.com/omariomari2/uncluster/internal/extractor"
 	"github.com/omariomari2/uncluster/internal/fetcher"
 	"github.com/omariomari2/uncluster/internal/htmlutil"
@@ -19,6 +24,7 @@ type ProjectConfig struct {
 	HTML        string
 	CSS         string
 	JS          string
+	InlineJS    []extractor.InlineResource
 	ExternalCSS []fetcher.FetchedResource
 	ExternalJS  []fetcher.FetchedResource
 	LocalAssets []extractor.LocalAsset
@@ -100,22 +106,57 @@ func generateIndexHTML(config *ProjectConfig) (string, error) {
 		return "", err
 	}
 
+	doc, err := html.Parse(strings.NewReader(config.HTML))
+	if err != nil {
+		return "", fmt.Errorf("parse source document: %w", err)
+	}
+
 	title, headMeta := documentHead(config.HTML)
 	if strings.TrimSpace(title) == "" {
 		title = config.ProjectName
 	}
+
+	hydrationHTML, err := converter.ConvertSectionToHydrationHTML(config.HTML)
+	if err != nil {
+		return "", err
+	}
+
+	htmlNode := htmlutil.FindElement(doc, "html")
+	bodyNode := htmlutil.FindElement(doc, "body")
 
 	var buf strings.Builder
 	err = tmpl.Execute(&buf, struct {
 		ProjectName string
 		Title       string
 		HeadMeta    string
+		HTMLAttrs   string
+		BodyAttrs   string
+		BodyHTML    string
 	}{
 		ProjectName: config.ProjectName,
 		Title:       title,
 		HeadMeta:    headMeta,
+		HTMLAttrs:   renderHTMLAttributes(htmlNode),
+		BodyAttrs:   renderHTMLAttributes(bodyNode),
+		BodyHTML:    hydrationHTML,
 	})
 	return buf.String(), err
+}
+
+func renderHTMLAttributes(n *html.Node) string {
+	if n == nil || len(n.Attr) == 0 {
+		return ""
+	}
+
+	var rendered strings.Builder
+	for _, attr := range n.Attr {
+		name := attr.Key
+		if attr.Namespace != "" {
+			name = attr.Namespace + ":" + name
+		}
+		rendered.WriteString(` ` + name + `="` + stdhtml.EscapeString(attr.Val) + `"`)
+	}
+	return rendered.String()
 }
 
 // documentHead returns the source page's title and the <head> elements worth
@@ -184,11 +225,19 @@ func organizeSourceFiles(config *ProjectConfig, files map[string]string) {
 		config.ExternalCSS,
 		config.ExternalJS,
 	)
+	if err == nil && len(config.InlineJS) > 0 {
+		mainTsx = generateMainTsx(
+			config.HTML,
+			config.CSS,
+			config.JS,
+			config.ExternalCSS,
+			config.ExternalJS,
+			config.InlineJS,
+		)
+	}
 	if err != nil {
 		log.Printf("⚠️ Failed to generate TSX views: %v", err)
-		mainComponent = fmt.Sprintf(`import React from 'react'
-
-function MainComponent() {
+		mainComponent = fmt.Sprintf(`function MainComponent() {
   return (
     <div dangerouslySetInnerHTML={{__html: %q}} />
   )
@@ -209,8 +258,13 @@ export default MainComponent
 	if config.CSS != "" {
 		files["src/styles/main.css"] = config.CSS
 	}
-	if strings.TrimSpace(config.JS) != "" {
+	if strings.TrimSpace(config.JS) != "" && len(config.InlineJS) == 0 {
 		files["public/scripts/main.js"] = config.JS
+	}
+	for _, script := range config.InlineJS {
+		if strings.HasPrefix(script.Path, "inline/") && strings.TrimSpace(script.Content) != "" {
+			files["public/scripts/"+script.Path] = script.Content
+		}
 	}
 
 	for _, css := range config.ExternalCSS {
@@ -227,7 +281,50 @@ export default MainComponent
 }
 
 func cssForPublicAssets(content string) string {
-	return strings.ReplaceAll(content, "../../assets/", "/assets/")
+	return cssURLPattern.ReplaceAllStringFunc(content, func(match string) string {
+		parts := cssURLPattern.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+
+		quote, rawURL := "", ""
+		switch {
+		case parts[1] != "":
+			quote, rawURL = `"`, parts[1]
+		case parts[2] != "":
+			quote, rawURL = `'`, parts[2]
+		default:
+			rawURL = strings.TrimSpace(parts[3])
+		}
+
+		rebased, ok := rebasePublicAssetURL(rawURL)
+		if !ok {
+			return match
+		}
+		return "url(" + quote + rebased + quote + ")"
+	})
+}
+
+var cssURLPattern = regexp.MustCompile(`(?i)url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)`)
+
+func rebasePublicAssetURL(rawURL string) (string, bool) {
+	if rawURL == "" || strings.HasPrefix(rawURL, "/") || strings.HasPrefix(rawURL, "#") {
+		return "", false
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+		return "", false
+	}
+
+	pathPart, suffix := rawURL, ""
+	if split := strings.IndexAny(pathPart, "?#"); split >= 0 {
+		pathPart, suffix = pathPart[:split], pathPart[split:]
+	}
+	cleaned := pathpkg.Clean("/" + strings.ReplaceAll(pathPart, `\`, "/"))
+	if cleaned != "/assets" && !strings.HasPrefix(cleaned, "/assets/") {
+		return "", false
+	}
+	return cleaned + suffix, true
 }
 
 // localAssetFiles places a page's referenced images, fonts and other binaries

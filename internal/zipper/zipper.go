@@ -10,7 +10,7 @@ import (
 	"github.com/omariomari2/uncluster/internal/fetcher"
 )
 
-func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineResource, externalCSS, externalJS []fetcher.FetchedResource, localAssets []extractor.LocalAsset) ([]byte, error) {
+func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineResource, externalCSS, externalJS []fetcher.FetchedResource, localAssets []extractor.LocalAsset, capture ...*extractor.CaptureManifest) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := zip.NewWriter(&buf)
 
@@ -38,6 +38,16 @@ func CreateZipWithMetadata(html string, inlineCSS, inlineJS []extractor.InlineRe
 			continue
 		}
 		if err := writeEntry(writer, asset.Path, asset.Content); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(capture) > 0 && capture[0] != nil {
+		manifestData, err := capture[0].JSON()
+		if err != nil {
+			return nil, fmt.Errorf("marshal capture manifest: %w", err)
+		}
+		if err := writeEntry(writer, "uncluster-capture.json", manifestData); err != nil {
 			return nil, err
 		}
 	}

@@ -2,11 +2,13 @@ package nodejs
 
 import (
 	"fmt"
-	"github.com/omariomari2/uncluster/internal/converter"
-	"github.com/omariomari2/uncluster/internal/fetcher"
-	"github.com/omariomari2/uncluster/internal/htmlutil"
 	"log"
 	"strings"
+
+	"github.com/omariomari2/uncluster/internal/converter"
+	"github.com/omariomari2/uncluster/internal/extractor"
+	"github.com/omariomari2/uncluster/internal/fetcher"
+	"github.com/omariomari2/uncluster/internal/htmlutil"
 
 	"golang.org/x/net/html"
 )
@@ -41,7 +43,7 @@ func generateTSXViews(
 		if convErr != nil {
 			return nil, "", "", convErr
 		}
-		return map[string]string{}, mc, generateMainTsx(inlineCSS, inlineJS, externalCSS, externalJS), nil
+		return map[string]string{}, mc, generateMainTsx(htmlContent, inlineCSS, inlineJS, externalCSS, externalJS), nil
 	}
 
 	root := selectComponentRoot(body)
@@ -52,7 +54,7 @@ func generateTSXViews(
 		if convErr != nil {
 			return nil, "", "", convErr
 		}
-		return map[string]string{}, mc, generateMainTsx(inlineCSS, inlineJS, externalCSS, externalJS), nil
+		return map[string]string{}, mc, generateMainTsx(htmlContent, inlineCSS, inlineJS, externalCSS, externalJS), nil
 	}
 
 	usedNames := make(map[string]int)
@@ -80,7 +82,7 @@ func generateTSXViews(
 		if convErr != nil {
 			return nil, "", "", convErr
 		}
-		return map[string]string{}, mc, generateMainTsx(inlineCSS, inlineJS, externalCSS, externalJS), nil
+		return map[string]string{}, mc, generateMainTsx(htmlContent, inlineCSS, inlineJS, externalCSS, externalJS), nil
 	}
 
 	sectionFiles = make(map[string]string, len(resolved))
@@ -105,7 +107,7 @@ func generateTSXViews(
 		main = generateMainComponentTSX(resolved)
 	}
 
-	return sectionFiles, main, generateMainTsx(inlineCSS, inlineJS, externalCSS, externalJS), nil
+	return sectionFiles, main, generateMainTsx(htmlContent, inlineCSS, inlineJS, externalCSS, externalJS), nil
 }
 
 // componentMarkerTag is the placeholder element left where a component was
@@ -144,10 +146,8 @@ func buildMainComponent(body *html.Node, components []tsxComponent) (string, err
 		converted = strings.ReplaceAll(converted, componentMarkerJSX(comp.Name), "<"+comp.Name+" />")
 	}
 
-	const reactImport = "import React from 'react'\n"
-	if idx := strings.Index(converted, reactImport); idx != -1 {
-		at := idx + len(reactImport)
-		converted = converted[:at] + imports.String() + converted[at:]
+	if imports.Len() > 0 {
+		converted = imports.String() + "\n" + converted
 	}
 	return converted, nil
 }
@@ -208,8 +208,7 @@ func generateMainComponentTSX(sections []tsxComponent) string {
 		jsxLines.WriteString(fmt.Sprintf("      <%s />\n", comp.Name))
 	}
 
-	return fmt.Sprintf(`import React from 'react'
-%s
+	return fmt.Sprintf(`%s
 function MainComponent() {
   return (
     <>
@@ -222,71 +221,261 @@ export default MainComponent
 }
 
 func generateMainTsx(
+	htmlContent string,
 	inlineCSS string,
 	inlineJS string,
 	externalCSS []fetcher.FetchedResource,
 	externalJS []fetcher.FetchedResource,
+	inlineResources ...[]extractor.InlineResource,
 ) string {
 	var cssImports strings.Builder
 	if strings.TrimSpace(inlineCSS) != "" {
 		cssImports.WriteString("import './styles/main.css'\n")
 	}
 	for _, res := range externalCSS {
-		if res.Error == nil && strings.TrimSpace(res.Content) != "" {
+		if res.Error == nil && res.Type != "css-import" && strings.TrimSpace(res.Content) != "" {
 			cssImports.WriteString(fmt.Sprintf("import './styles/external/%s'\n", res.Filename))
 		}
 	}
 
-	var scriptPaths []string
-	if strings.TrimSpace(inlineJS) != "" {
-		scriptPaths = append(scriptPaths, "/scripts/main.js")
+	var inlineScripts []extractor.InlineResource
+	if len(inlineResources) > 0 {
+		inlineScripts = inlineResources[0]
 	}
-	for _, res := range externalJS {
-		if res.Error == nil && strings.TrimSpace(res.Content) != "" {
-			scriptPaths = append(scriptPaths, "/scripts/external/"+res.Filename)
-		}
-	}
+	scripts := originalScripts(htmlContent, inlineJS, inlineScripts, externalJS)
 
 	var scriptLoader strings.Builder
-	if len(scriptPaths) > 0 {
-		scriptLoader.WriteString("\nconst originalScripts = [\n")
-		for _, scriptPath := range scriptPaths {
-			scriptLoader.WriteString(fmt.Sprintf("  '%s',\n", scriptPath))
+	if len(scripts) > 0 {
+		scriptLoader.WriteString(`
+type OriginalScript = {
+  src: string
+  parent: 'head' | 'body'
+  attributes: Record<string, string>
+}
+
+const originalScripts: OriginalScript[] = [
+`)
+		for _, script := range scripts {
+			scriptLoader.WriteString("  { src: " + quoteTypeScriptString(script.Src) + ", parent: " + quoteTypeScriptString(script.Parent) + ", attributes: {")
+			for i, attr := range script.Attributes {
+				if i > 0 {
+					scriptLoader.WriteString(", ")
+				}
+				scriptLoader.WriteString(quoteTypeScriptString(attr.Name) + ": " + quoteTypeScriptString(attr.Value))
+			}
+			scriptLoader.WriteString("} },\n")
 		}
 		scriptLoader.WriteString(`]
 
-function loadOriginalScript(src: string): Promise<void> {
+function loadOriginalScript(original: OriginalScript, index: number): Promise<void> {
+	const marker = ` + "`" + `uncluster-original-${index}` + "`" + `
+	if (document.querySelector(` + "`" + `script[data-uncluster-script="${marker}"]` + "`" + `)) {
+		return Promise.resolve()
+	}
+
   return new Promise((resolve, reject) => {
     const script = document.createElement('script')
-    script.src = src
+		script.async = false
+		for (const [name, value] of Object.entries(original.attributes)) {
+			script.setAttribute(name, value)
+		}
+		script.dataset.unclusterScript = marker
+		script.src = original.src
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error(` + "`" + `Failed to load ${src}` + "`" + `))
-    document.body.appendChild(script)
+		script.onerror = () => reject(new Error(` + "`" + `Failed to load ${original.src}` + "`" + `))
+		const parent = original.parent === 'head' ? document.head : document.body
+		parent.appendChild(script)
   })
 }
 
 async function loadOriginalScripts() {
-  for (const src of originalScripts) {
-    await loadOriginalScript(src)
+	for (const [index, original] of originalScripts.entries()) {
+		await loadOriginalScript(original, index)
   }
+}
+
+function HydrationComplete(): null {
+	useEffect(() => {
+		void loadOriginalScripts()
+	}, [])
+	return null
 }
 `)
 	}
 
-	return fmt.Sprintf(`import React from 'react'
-import ReactDOM from 'react-dom/client'
+	reactImport := ""
+	hydration := "hydrateRoot(document.body, <App />)\n"
+	if len(scripts) > 0 {
+		reactImport = "import { useEffect } from 'react'\n"
+		hydration = `hydrateRoot(
+  document.body,
+  <>
+    <App />
+    <HydrationComplete />
+  </>,
+)
+`
+	}
+
+	return fmt.Sprintf(`%simport { hydrateRoot } from 'react-dom/client'
 import App from './App'
 %s
 %s
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
-%s`, cssImports.String(), scriptLoader.String(), func() string {
-		if len(scriptPaths) == 0 {
-			return ""
+%s`, reactImport, cssImports.String(), scriptLoader.String(), hydration)
+}
+
+type originalScript struct {
+	Src        string
+	Parent     string
+	Attributes []scriptAttribute
+}
+
+type scriptAttribute struct {
+	Name  string
+	Value string
+}
+
+func originalScripts(htmlContent, inlineJS string, inlineScripts []extractor.InlineResource, externalJS []fetcher.FetchedResource) []originalScript {
+	doc, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		return fallbackOriginalScripts(inlineJS, inlineScripts, externalJS)
+	}
+
+	externalPaths := make(map[string]string)
+	for _, resource := range externalJS {
+		if resource.Error != nil || strings.TrimSpace(resource.Content) == "" {
+			continue
 		}
-		return "\nvoid loadOriginalScripts()\n"
-	}())
+		path := "/scripts/external/" + resource.Filename
+		externalPaths[resource.URL] = path
+		externalPaths[resource.Filename] = path
+	}
+	inlinePaths := make(map[string]string)
+	for _, resource := range inlineScripts {
+		if strings.HasPrefix(resource.Path, "inline/") && strings.TrimSpace(resource.Content) != "" {
+			inlinePaths[resource.Path] = "/scripts/" + resource.Path
+			inlinePaths["/"+resource.Path] = "/scripts/" + resource.Path
+		}
+	}
+
+	seen := make(map[string]bool)
+	var scripts []originalScript
+	var walk func(*html.Node, string)
+	walk = func(n *html.Node, parent string) {
+		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "head":
+				parent = "head"
+			case "body":
+				parent = "body"
+			case "script":
+				if htmlutil.IsJavaScriptType(htmlutil.GetAttr(n, "type")) {
+					src := canonicalScriptPath(htmlutil.GetAttr(n, "src"), inlineJS, inlinePaths, externalPaths)
+					if src != "" && !seen[src] {
+						seen[src] = true
+						scripts = append(scripts, originalScript{
+							Src:        src,
+							Parent:     scriptParent(parent),
+							Attributes: originalScriptAttributes(n),
+						})
+					}
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child, parent)
+		}
+	}
+	walk(doc, "body")
+
+	for _, fallback := range fallbackOriginalScripts(inlineJS, inlineScripts, externalJS) {
+		if !seen[fallback.Src] {
+			seen[fallback.Src] = true
+			scripts = append(scripts, fallback)
+		}
+	}
+	return scripts
+}
+
+func fallbackOriginalScripts(inlineJS string, inlineScripts []extractor.InlineResource, externalJS []fetcher.FetchedResource) []originalScript {
+	var scripts []originalScript
+	for _, resource := range inlineScripts {
+		if strings.HasPrefix(resource.Path, "inline/") && strings.TrimSpace(resource.Content) != "" {
+			scripts = append(scripts, originalScript{Src: "/scripts/" + resource.Path, Parent: "body"})
+		}
+	}
+	if len(inlineScripts) == 0 && strings.TrimSpace(inlineJS) != "" {
+		scripts = append(scripts, originalScript{Src: "/scripts/main.js", Parent: "body"})
+	}
+	for _, resource := range externalJS {
+		if resource.Error == nil && strings.TrimSpace(resource.Content) != "" {
+			scripts = append(scripts, originalScript{Src: "/scripts/external/" + resource.Filename, Parent: "body"})
+		}
+	}
+	return scripts
+}
+
+func canonicalScriptPath(src, inlineJS string, inlinePaths, externalPaths map[string]string) string {
+	src = strings.TrimSpace(src)
+	if src == "" {
+		if strings.TrimSpace(inlineJS) != "" {
+			return "/scripts/main.js"
+		}
+		return ""
+	}
+	if path, ok := externalPaths[src]; ok {
+		return path
+	}
+	if path, ok := inlinePaths[src]; ok {
+		return path
+	}
+
+	trimmed := strings.TrimPrefix(src, "/")
+	switch {
+	case trimmed == "script.js", trimmed == "scripts/main.js", strings.HasPrefix(trimmed, "inline/"):
+		if strings.TrimSpace(inlineJS) != "" {
+			return "/scripts/main.js"
+		}
+	case strings.HasPrefix(trimmed, "external/js/"):
+		return "/scripts/external/" + strings.TrimPrefix(trimmed, "external/js/")
+	case strings.HasPrefix(trimmed, "scripts/external/"):
+		return "/" + trimmed
+	default:
+		return src
+	}
+	return ""
+}
+
+func originalScriptAttributes(n *html.Node) []scriptAttribute {
+	attrs := make([]scriptAttribute, 0, len(n.Attr))
+	for _, attr := range n.Attr {
+		if strings.EqualFold(attr.Key, "src") {
+			continue
+		}
+		name := attr.Key
+		if attr.Namespace != "" {
+			name = attr.Namespace + ":" + name
+		}
+		attrs = append(attrs, scriptAttribute{Name: name, Value: attr.Val})
+	}
+	return attrs
+}
+
+func scriptParent(parent string) string {
+	if parent == "head" {
+		return "head"
+	}
+	return "body"
+}
+
+func quoteTypeScriptString(value string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`'`, `\'`,
+		"\r", `\r`,
+		"\n", `\n`,
+		"\u2028", `\u2028`,
+		"\u2029", `\u2029`,
+	)
+	return "'" + replacer.Replace(value) + "'"
 }

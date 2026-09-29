@@ -37,3 +37,30 @@ func TestEJSServerDoesNotServeHTMLForMissingAssets(t *testing.T) {
 		t.Errorf("server.js still renders the page for every unmatched request; got:\n%s", server)
 	}
 }
+
+// Express renders the same page for extensionless nested routes. Localized
+// assets therefore need public-root URLs: a relative assets/logo.svg would be
+// requested as /nested/assets/logo.svg when the page is opened at /nested/.
+func TestGenerateEJSProjectRootsLocalizedAssetURLs(t *testing.T) {
+	project, err := GenerateEJSProject(&EJSProjectConfig{
+		ProjectName: "asset-fixture",
+		HTML: `<!doctype html><html><body>
+			<img src="assets/logo.svg" srcset="assets/logo.svg 1x, assets/logo-2x.svg 2x">
+			<div data-src="assets/menu.json"></div>
+		</body></html>`,
+	})
+	if err != nil {
+		t.Fatalf("GenerateEJSProject() error = %v", err)
+	}
+
+	index := project.Files["views/index.ejs"]
+	for _, want := range []string{
+		`src="/assets/logo.svg"`,
+		`srcset="/assets/logo.svg 1x, /assets/logo-2x.svg 2x"`,
+		`data-src="/assets/menu.json"`,
+	} {
+		if !strings.Contains(index, want) {
+			t.Errorf("views/index.ejs missing %q; got:\n%s", want, index)
+		}
+	}
+}

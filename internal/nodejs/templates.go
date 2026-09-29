@@ -382,40 +382,28 @@ This project includes the following external resources that were automatically d
 MIT
 `
 
-const mainTsxFallback = `import React from 'react'
-import ReactDOM from 'react-dom/client'
+const mainTsxFallback = `import { hydrateRoot } from 'react-dom/client'
 import App from './App'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+hydrateRoot(document.body, <App />)
 `
 
 const indexHtmlTemplate = `<!DOCTYPE html>
-<html lang="en">
+<html{{.HTMLAttrs}}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{.Title}}</title>
-{{.HeadMeta}}  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/main.tsx"></script>
-  </body>
+{{.HeadMeta}}    <script type="module" src="/main.tsx"></script>
+  </head>
+  <body{{.BodyAttrs}}>{{.BodyHTML}}</body>
 </html>
 `
 
-const appTsxTemplate = `import React from 'react'
-import MainComponent from './components/MainComponent'
+const appTsxTemplate = `import MainComponent from './components/MainComponent'
 
-function App() {
-  return (
-    <div className="App">
-      <MainComponent />
-    </div>
-  )
+function App(): JSX.Element {
+  return <MainComponent />
 }
 
 export default App

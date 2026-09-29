@@ -58,7 +58,10 @@ type indexCandidate struct {
 
 const maxExtractedBytes = 512 << 20
 
-var cssURLPattern = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)`)
+var (
+	cssURLPattern          = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)`)
+	cssQuotedImportPattern = regexp.MustCompile(`(?i)@import\s+['"]([^'"]+)['"]`)
+)
 
 func Process(inputPath, outputBase string) (*Result, error) {
 	return ProcessWithOptions(inputPath, Options{OutputBase: outputBase})
@@ -371,7 +374,7 @@ func collectHTMLRefs(doc *html.Node, htmlDir, rootDir string) []string {
 			for i := range n.Attr {
 				attr := &n.Attr[i]
 				switch strings.ToLower(attr.Key) {
-				case "src", "href", "poster":
+				case "src", "href", "poster", "data-src":
 					refs = append(refs, attr.Val)
 				case "srcset":
 					for _, item := range parseSrcset(attr.Val) {
@@ -433,7 +436,7 @@ func rewriteHTMLRefs(doc *html.Node, htmlDir, rootDir string, assetMap map[strin
 			for i := range n.Attr {
 				attr := &n.Attr[i]
 				switch strings.ToLower(attr.Key) {
-				case "src", "href", "poster":
+				case "src", "href", "poster", "data-src":
 					if replacement, ok := localReplacement(attr.Val, htmlDir, rootDir, assetMap); ok {
 						attr.Val = replacement
 					}
@@ -602,8 +605,14 @@ func rewriteSrcset(value, baseDir, rootDir string, assetMap map[string]localAsse
 
 func extractCSSURLs(css string) []string {
 	matches := cssURLPattern.FindAllStringSubmatch(css, -1)
-	refs := make([]string, 0, len(matches))
+	importMatches := cssQuotedImportPattern.FindAllStringSubmatch(css, -1)
+	refs := make([]string, 0, len(matches)+len(importMatches))
 	for _, match := range matches {
+		if len(match) >= 2 {
+			refs = append(refs, match[1])
+		}
+	}
+	for _, match := range importMatches {
 		if len(match) >= 2 {
 			refs = append(refs, match[1])
 		}
@@ -612,13 +621,23 @@ func extractCSSURLs(css string) []string {
 }
 
 func rewriteCSSURLs(css, baseDir, rootDir string, assetMap map[string]localAsset) string {
-	return cssURLPattern.ReplaceAllStringFunc(css, func(match string) string {
+	rewritten := cssURLPattern.ReplaceAllStringFunc(css, func(match string) string {
 		parts := cssURLPattern.FindStringSubmatch(match)
 		if len(parts) < 2 {
 			return match
 		}
 		if replacement, ok := localReplacement(parts[1], baseDir, rootDir, assetMap); ok {
 			return "url(" + replacement + ")"
+		}
+		return match
+	})
+	return cssQuotedImportPattern.ReplaceAllStringFunc(rewritten, func(match string) string {
+		parts := cssQuotedImportPattern.FindStringSubmatch(match)
+		if len(parts) < 2 {
+			return match
+		}
+		if replacement, ok := localReplacement(parts[1], baseDir, rootDir, assetMap); ok {
+			return strings.Replace(match, parts[1], replacement, 1)
 		}
 		return match
 	})

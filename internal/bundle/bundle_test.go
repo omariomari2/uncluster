@@ -164,12 +164,12 @@ func TestProcessZipLocalizesAbsoluteURLAssets(t *testing.T) {
 			`</body></html>`,
 		// site.css pulls in another stylesheet, which pulls in a font: the
 		// chain has to be followed, not just the first level.
-		"example.com/css/site.css":   `@import url("reset.css"); body{background:url("../images/bg.png")}`,
-		"example.com/css/reset.css":  `@font-face{src:url("../fonts/f.woff2")}`,
-		"example.com/fonts/f.woff2":  "font",
-		"example.com/images/logo.png": "logo",
-		"example.com/images/proto.png": "proto",
-		"example.com/images/bg.png":   "bg",
+		"example.com/css/site.css":      `@import "reset.css"; body{background:url("../images/bg.png")}`,
+		"example.com/css/reset.css":     `@font-face{src:url("../fonts/f.woff2")}`,
+		"example.com/fonts/f.woff2":     "font",
+		"example.com/images/logo.png":   "logo",
+		"example.com/images/proto.png":  "proto",
+		"example.com/images/bg.png":     "bg",
 		"example.com/images/unused.png": "unused",
 	})
 
@@ -200,5 +200,25 @@ func TestProcessZipLocalizesAbsoluteURLAssets(t *testing.T) {
 	}
 	if strings.Contains(string(index), "https://example.com/") {
 		t.Errorf("index.html still references the origin:\n%s", index)
+	}
+}
+
+func TestLocalizeAssetsCarriesURLBearingDataSrc(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, filepath.Join("animations", "menu.json"), `{"v":"5.7.4"}`)
+
+	rewritten, assets, err := LocalizeAssets(
+		`<!doctype html><html><body><div data-src="animations/menu.json"></div></body></html>`,
+		root,
+	)
+	if err != nil {
+		t.Fatalf("LocalizeAssets() error = %v", err)
+	}
+
+	if !strings.Contains(rewritten, `data-src="assets/animations/menu.json"`) {
+		t.Fatalf("LocalizeAssets() did not rewrite data-src; got %s", rewritten)
+	}
+	if len(assets) != 1 || assets[0].Path != "assets/animations/menu.json" {
+		t.Fatalf("LocalizeAssets() assets = %#v, want localized menu JSON", assets)
 	}
 }

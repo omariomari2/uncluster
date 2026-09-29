@@ -21,6 +21,7 @@ import (
 )
 
 var cssURLRegex = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)`)
+var cssImportRegex = regexp.MustCompile(`(?i)@import\s+(?:url\(\s*['"]?([^'")\s]+)['"]?\s*\)|["']([^"']+)["'])`)
 
 // ScrapeURL fetches a webpage and all its referenced assets (CSS, JS, images,
 // fonts, SVGs) and returns an ExtractedContent ready for the export pipeline.
@@ -43,33 +44,32 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
+	installWebflowLocalRuntimeCompat(doc, base)
 
 	cssURLs, jsURLs, binaryURLs := findAllAssetURLs(doc, base)
+	retainedAssets := findRetainedExternalAssets(doc, base)
+	capture := extractor.NewCaptureManifest(rawURL)
 
 	// Build a URL→localPath map for path rewriting
 	urlToLocal := make(map[string]string)
 
 	// Fetch CSS and JS as text resources
-	var externalCSS []fetcher.FetchedResource
 	var externalJS []fetcher.FetchedResource
 
-	if len(cssURLs) > 0 {
-		externalCSS = fetcher.FetchExternalResources(cssURLs, "css")
-		for _, r := range externalCSS {
-			if r.Error == nil {
-				urlToLocal[r.URL] = "external/css/" + r.Filename
-				// Also scan CSS content for url() references (fonts, bg images)
-				extraBinary := extractCSSURLs(r.Content, r.URL)
-				binaryURLs = append(binaryURLs, extraBinary...)
-			}
-		}
-	}
+	externalCSS, cssBinaryURLs := collectCSSResources(cssURLs, fetchCSSResource, capture, urlToLocal)
+	binaryURLs = append(binaryURLs, cssBinaryURLs...)
 
 	if len(jsURLs) > 0 {
 		externalJS = fetcher.FetchExternalResources(jsURLs, "js")
 		for _, r := range externalJS {
-			if r.Error == nil {
+			if r.Error == nil && r.Content != "" {
 				urlToLocal[r.URL] = "external/js/" + r.Filename
+				capture.AddAsset(extractor.CaptureAsset{
+					URL: r.URL, Path: "external/js/" + r.Filename,
+					Type: "js", Status: extractor.CaptureLocalized,
+				})
+			} else {
+				capture.AddAsset(failedCaptureAsset(r.URL, "js", r.Error))
 			}
 		}
 	}
@@ -84,6 +84,7 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 		data, mime, err := fetcher.FetchRaw(bURL)
 		if err != nil {
 			log.Printf("scraper: skipping binary asset %s: %v", bURL, err)
+			capture.AddAsset(failedCaptureAsset(bURL, "asset", err))
 			continue
 		}
 		filename := binaryFilename(bURL, mime, binaryUsedNames)
@@ -93,6 +94,15 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 			Path:    localPath,
 			Content: data,
 			MIME:    mime,
+		})
+		capture.AddAsset(extractor.CaptureAsset{
+			URL: bURL, Path: localPath, Type: "asset", Status: extractor.CaptureLocalized,
+		})
+	}
+
+	for _, retained := range retainedAssets {
+		capture.AddAsset(extractor.CaptureAsset{
+			URL: retained.URL, Type: retained.Type, Status: extractor.CaptureRetainedExternal,
 		})
 	}
 
@@ -136,7 +146,80 @@ func ScrapeURL(rawURL string) (*extractor.ExtractedContent, error) {
 		ExternalCSS: externalCSS,
 		ExternalJS:  externalJS,
 		LocalAssets: localAssets,
+		Capture:     capture,
 	}, nil
+}
+
+const webflowCompatPrepare = `(function(){var r=document.documentElement,d=r.getAttribute("data-wf-domain");if(!d||location.hostname===d)return;window.__unclusterWebflowDomain=d;r.setAttribute("data-wf-domain",location.hostname)})();`
+
+const webflowCompatRestore = `(function(){var d=window.__unclusterWebflowDomain;if(!d)return;var f=function(){setTimeout(function(){document.documentElement.setAttribute("data-wf-domain",d);delete window.__unclusterWebflowDomain},250)};if(document.readyState==="loading")addEventListener("DOMContentLoaded",f,{once:true});else f()})();`
+
+// installWebflowLocalRuntimeCompat preserves the behavior of a page served on
+// its own *.webflow.io hostname when the export is opened from another host.
+// Webflow's brand module otherwise treats the hostname change as a reason to
+// inject a remote badge that is absent from the captured source page.
+func installWebflowLocalRuntimeCompat(doc *html.Node, base *url.URL) bool {
+	var documentElement, head, body *html.Node
+	walkElements(doc, func(node *html.Node) {
+		switch node.Data {
+		case "html":
+			documentElement = node
+		case "head":
+			head = node
+		case "body":
+			body = node
+		}
+	})
+	if documentElement == nil || head == nil || body == nil || base == nil {
+		return false
+	}
+
+	domain := strings.ToLower(strings.TrimSuffix(htmlutil.GetAttr(documentElement, "data-wf-domain"), "."))
+	if !strings.HasSuffix(domain, ".webflow.io") || !strings.EqualFold(domain, base.Hostname()) {
+		return false
+	}
+
+	prepare := inlineScriptNode(webflowCompatPrepare)
+	if head.FirstChild == nil {
+		head.AppendChild(prepare)
+	} else {
+		head.InsertBefore(prepare, head.FirstChild)
+	}
+	body.AppendChild(inlineScriptNode(webflowCompatRestore))
+	return true
+}
+
+func inlineScriptNode(source string) *html.Node {
+	script := &html.Node{Type: html.ElementNode, Data: "script"}
+	script.AppendChild(&html.Node{Type: html.TextNode, Data: source})
+	return script
+}
+
+func collectCSSResources(cssURLs []string, fetchOne cssFetcher, capture *extractor.CaptureManifest, urlToLocal map[string]string) ([]fetcher.FetchedResource, []string) {
+	resources, binaryURLs := fetchCSSResources(cssURLs, fetchOne)
+	for _, resource := range resources {
+		if resource.Error == nil && resource.Content != "" {
+			localPath := "external/css/" + resource.Filename
+			urlToLocal[resource.URL] = localPath
+			capture.AddAsset(extractor.CaptureAsset{
+				URL: resource.URL, Path: localPath,
+				Type: "css", Status: extractor.CaptureLocalized,
+			})
+		} else {
+			capture.AddAsset(failedCaptureAsset(resource.URL, "css", resource.Error))
+		}
+	}
+	return resources, binaryURLs
+}
+
+func failedCaptureAsset(rawURL, assetType string, err error) extractor.CaptureAsset {
+	message := "empty response body"
+	if err != nil {
+		message = err.Error()
+	}
+	return extractor.CaptureAsset{
+		URL: rawURL, Type: assetType, Status: extractor.CaptureFailed, Error: message,
+	}
 }
 
 // fetchPage downloads the HTML content of a URL with a browser User-Agent.
@@ -246,17 +329,25 @@ func linkKind(n *html.Node, abs string) assetKind {
 // findAllAssetURLs walks the HTML tree and collects absolute URLs for
 // CSS, JS, and binary assets (images, fonts, SVGs).
 func findAllAssetURLs(doc *html.Node, base *url.URL) (cssURLs, jsURLs, binaryURLs []string) {
-	sets := map[assetKind]map[string]bool{
+	seen := map[assetKind]map[string]bool{
 		assetCSS:    {},
 		assetJS:     {},
 		assetBinary: {},
 	}
 
 	add := func(kind assetKind, abs string) {
-		if abs == "" || kind == assetNone {
+		if abs == "" || kind == assetNone || seen[kind][abs] {
 			return
 		}
-		sets[kind][abs] = true
+		seen[kind][abs] = true
+		switch kind {
+		case assetCSS:
+			cssURLs = append(cssURLs, abs)
+		case assetJS:
+			jsURLs = append(jsURLs, abs)
+		case assetBinary:
+			binaryURLs = append(binaryURLs, abs)
+		}
 	}
 
 	walkElements(doc, func(n *html.Node) {
@@ -269,6 +360,10 @@ func findAllAssetURLs(doc *html.Node, base *url.URL) (cssURLs, jsURLs, binaryURL
 				add(linkKind(n, abs), abs)
 			}
 			return
+		}
+
+		if abs := resolveDataSrcURL(base, htmlutil.GetAttr(n, "data-src")); abs != "" {
+			add(assetBinary, abs)
 		}
 
 		for _, ref := range assetAttrs {
@@ -290,16 +385,64 @@ func findAllAssetURLs(doc *html.Node, base *url.URL) (cssURLs, jsURLs, binaryURL
 		}
 	})
 
-	for u := range sets[assetCSS] {
-		cssURLs = append(cssURLs, u)
-	}
-	for u := range sets[assetJS] {
-		jsURLs = append(jsURLs, u)
-	}
-	for u := range sets[assetBinary] {
-		binaryURLs = append(binaryURLs, u)
-	}
 	return
+}
+
+type captureReference struct {
+	URL  string
+	Type string
+}
+
+// findRetainedExternalAssets records render/runtime dependencies that remain
+// intentionally external. Navigation and connection-metadata URLs are not
+// capture assets and are deliberately excluded.
+func findRetainedExternalAssets(doc *html.Node, base *url.URL) []captureReference {
+	seen := make(map[string]bool)
+	var retained []captureReference
+	add := func(rawURL, assetType string) {
+		absolute := resolveURL(base, rawURL)
+		key := assetType + "\x00" + absolute
+		if absolute == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		retained = append(retained, captureReference{URL: absolute, Type: assetType})
+	}
+
+	walkElements(doc, func(n *html.Node) {
+		switch n.Data {
+		case "link":
+			href := htmlutil.GetAttr(n, "href")
+			if strings.Contains(strings.ToLower(htmlutil.GetAttr(n, "rel")), "stylesheet") && htmlutil.IsGoogleFonts(href) {
+				add(href, "css")
+			}
+		case "iframe":
+			add(htmlutil.GetAttr(n, "src"), "iframe")
+		}
+	})
+	return retained
+}
+
+// resolveDataSrcURL recognizes URL-bearing data-src values used by Webflow
+// lazy-loading and Lottie embeds without treating ordinary component metadata
+// (for example data-src="carousel-panel") as a network asset.
+func resolveDataSrcURL(base *url.URL, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(ref)
+	if err != nil {
+		return ""
+	}
+	pathLike := strings.HasPrefix(ref, "//") || strings.HasPrefix(ref, "/") ||
+		strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "../") ||
+		parsed.IsAbs() || strings.Contains(parsed.Path, "/") || path.Ext(parsed.Path) != ""
+	if !pathLike {
+		return ""
+	}
+	return resolveURL(base, ref)
 }
 
 // resolveURL converts any href/src to an absolute URL relative to base.
@@ -327,24 +470,123 @@ func resolveURL(base *url.URL, ref string) string {
 // extractCSSURLs scans CSS content for url(...) references and returns
 // absolute URLs, resolving relative refs against cssBaseURL.
 func extractCSSURLs(cssContent, cssBaseURL string) []string {
+	_, assets := extractCSSReferences(cssContent, cssBaseURL)
+	return assets
+}
+
+// extractCSSReferences returns imported stylesheets and non-import url()
+// assets separately, preserving their order within each category.
+func extractCSSReferences(cssContent, cssBaseURL string) (imports, assets []string) {
 	cssBase, err := url.Parse(cssBaseURL)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
-	matches := cssURLRegex.FindAllStringSubmatch(cssContent, -1)
-	var result []string
-	for _, m := range matches {
-		if len(m) < 2 {
-			continue
+	importMatches := cssImportRegex.FindAllStringSubmatchIndex(cssContent, -1)
+	for _, match := range importMatches {
+		var ref string
+		switch {
+		case match[2] >= 0:
+			ref = cssContent[match[2]:match[3]]
+		case match[4] >= 0:
+			ref = cssContent[match[4]:match[5]]
 		}
-		ref := strings.TrimSpace(m[1])
-		abs := resolveURL(cssBase, ref)
-		if abs != "" {
-			result = append(result, abs)
+		if abs := resolveURL(cssBase, ref); abs != "" {
+			imports = append(imports, abs)
 		}
 	}
-	return result
+
+	matches := cssURLRegex.FindAllStringSubmatchIndex(cssContent, -1)
+	for _, m := range matches {
+		if len(m) < 4 || insideAnyRange(m[0], m[1], importMatches) {
+			continue
+		}
+		ref := strings.TrimSpace(cssContent[m[2]:m[3]])
+		abs := resolveURL(cssBase, ref)
+		if abs != "" {
+			assets = append(assets, abs)
+		}
+	}
+	return imports, assets
+}
+
+func insideAnyRange(start, end int, ranges [][]int) bool {
+	for _, candidate := range ranges {
+		if start >= candidate[0] && end <= candidate[1] {
+			return true
+		}
+	}
+	return false
+}
+
+type cssFetcher func(string) fetcher.FetchedResource
+
+func fetchCSSResource(rawURL string) fetcher.FetchedResource {
+	resources := fetcher.FetchExternalResources([]string{rawURL}, "css")
+	if len(resources) == 0 {
+		return fetcher.FetchedResource{URL: rawURL, Type: "css", Error: fmt.Errorf("stylesheet fetch returned no result")}
+	}
+	return resources[0]
+}
+
+// fetchCSSResources follows @import references depth-first in stylesheet source
+// order. The seen set makes cycles safe and keeps each URL emitted once.
+func fetchCSSResources(rootURLs []string, fetchOne cssFetcher) ([]fetcher.FetchedResource, []string) {
+	seen := make(map[string]bool)
+	usedFilenames := make(map[string]int)
+	var resources []fetcher.FetchedResource
+	var binaryURLs []string
+
+	var visit func(string, bool)
+	visit = func(rawURL string, imported bool) {
+		if seen[rawURL] {
+			return
+		}
+		seen[rawURL] = true
+
+		resource := fetchOne(rawURL)
+		resource.URL = rawURL
+		resource.Type = "css"
+		if imported {
+			resource.Type = "css-import"
+		}
+		if resource.Error == nil {
+			resource.Filename = uniqueResourceFilename(resource.Filename, usedFilenames)
+		}
+		resources = append(resources, resource)
+		if resource.Error != nil {
+			return
+		}
+
+		imports, assets := extractCSSReferences(resource.Content, resource.URL)
+		for _, importedURL := range imports {
+			visit(importedURL, true)
+		}
+		binaryURLs = append(binaryURLs, assets...)
+	}
+
+	for _, rootURL := range rootURLs {
+		visit(rootURL, false)
+	}
+	return resources, deduplicateStrings(binaryURLs)
+}
+
+func uniqueResourceFilename(filename string, used map[string]int) string {
+	if used[filename] == 0 {
+		used[filename] = 1
+		return filename
+	}
+
+	ext := filepath.Ext(filename)
+	stem := strings.TrimSuffix(filename, ext)
+	for suffix := used[filename]; ; suffix++ {
+		candidate := fmt.Sprintf("%s-%d%s", stem, suffix, ext)
+		if used[candidate] == 0 {
+			used[filename] = suffix + 1
+			used[candidate] = 1
+			return candidate
+		}
+	}
 }
 
 // rewriteCSSURLs replaces downloaded url(...) dependencies with paths that are
@@ -356,7 +598,7 @@ func rewriteCSSURLs(cssContent, cssBaseURL, cssLocalPath string, urlToLocal map[
 	}
 
 	cssDir := filepath.Dir(filepath.FromSlash(cssLocalPath))
-	return cssURLRegex.ReplaceAllStringFunc(cssContent, func(match string) string {
+	rewritten := cssURLRegex.ReplaceAllStringFunc(cssContent, func(match string) string {
 		parts := cssURLRegex.FindStringSubmatch(match)
 		if len(parts) < 2 {
 			return match
@@ -374,6 +616,27 @@ func rewriteCSSURLs(cssContent, cssBaseURL, cssLocalPath string, urlToLocal map[
 		}
 		relative = filepath.ToSlash(relative)
 		return strings.Replace(match, parts[1], relative, 1)
+	})
+
+	return cssImportRegex.ReplaceAllStringFunc(rewritten, func(match string) string {
+		parts := cssImportRegex.FindStringSubmatch(match)
+		if len(parts) < 3 {
+			return match
+		}
+		ref := parts[1]
+		if ref == "" {
+			ref = parts[2]
+		}
+		absolute := resolveURL(cssBase, ref)
+		localPath, ok := urlToLocal[absolute]
+		if absolute == "" || !ok {
+			return match
+		}
+		relative, err := filepath.Rel(cssDir, filepath.FromSlash(localPath))
+		if err != nil {
+			return match
+		}
+		return strings.Replace(match, ref, filepath.ToSlash(relative), 1)
 	})
 }
 
@@ -402,6 +665,9 @@ func rewriteHTMLPaths(doc *html.Node, urlToLocal map[string]string, base *url.UR
 		if n.Data == "link" {
 			rewriteAttr(n, "href", urlToLocal, base)
 			return
+		}
+		if resolveDataSrcURL(base, htmlutil.GetAttr(n, "data-src")) != "" {
+			rewriteAttr(n, "data-src", urlToLocal, base)
 		}
 		for _, ref := range assetAttrs {
 			if ref.tag != n.Data {

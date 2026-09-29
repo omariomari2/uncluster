@@ -113,6 +113,8 @@ var (
 	jsxHandlerPattern = regexp.MustCompile(`(on[A-Z][A-Za-z]*)=\{\(\) => \{ (.*?) \}\}`)
 	// jsxBoolPattern matches disabled={true}.
 	jsxBoolPattern = regexp.MustCompile(`([A-Za-z-]+)=\{true\}`)
+	// jsxNumericPattern matches numeric DOM properties such as rows={4}.
+	jsxNumericPattern = regexp.MustCompile(`([A-Za-z-]+)=\{(-?[0-9]+)\}`)
 	// jsxDefaultValuePattern matches defaultValue={"x"} and defaultValue={["a","b"]}.
 	jsxDefaultValuePattern = regexp.MustCompile(`defaultValue=\{(\[[^\]]*\]|"(?:[^"\\]|\\.)*")\}`)
 	// jsStringLiteralPattern matches one double-quoted JS string literal.
@@ -152,6 +154,8 @@ func jsxToHTML(jsx string) string {
 
 	// A boolean attribute round-trips as bare presence.
 	out = jsxBoolPattern.ReplaceAllString(out, `$1=""`)
+	// React's number expression serializes to the same HTML attribute value.
+	out = jsxNumericPattern.ReplaceAllString(out, `$1="$2"`)
 
 	// defaultValue holds a JS string literal, which html.Parse cannot read as an
 	// attribute value. Flatten it to a plain attribute for applyReactInverse to
@@ -475,6 +479,18 @@ func TestGeneratedJSXIsReactValid(t *testing.T) {
 			markup:   `<form><select><option>A</option></select><p>x</p></form>`,
 			wantAny:  []string{},
 			wantNone: []string{"defaultValue"},
+		},
+		{
+			name:     "React boolean property casing",
+			markup:   `<form novalidate><video playsinline></video></form>`,
+			wantAny:  []string{`noValidate={true}`, `playsInline={true}`},
+			wantNone: []string{`novalidate=`, `playsinline=`},
+		},
+		{
+			name:     "numeric form properties use number expressions",
+			markup:   `<form><input size="40" maxlength="400"><textarea cols="40" rows="3"></textarea></form>`,
+			wantAny:  []string{`size={40}`, `maxLength={400}`, `cols={40}`, `rows={3}`},
+			wantNone: []string{`size="40"`, `maxLength="400"`, `cols="40"`, `rows="3"`},
 		},
 	}
 

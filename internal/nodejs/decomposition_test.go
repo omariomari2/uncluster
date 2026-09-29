@@ -165,6 +165,7 @@ func TestMainComponentPreservesSurroundingMarkup(t *testing.T) {
 	}
 
 	for _, want := range []string{
+		`import SiteHeader from './SiteHeader'`,
 		// The wrapper selectComponentRoot descends through.
 		`<div className="container" id="top">`,
 		// The landmark whose children became components.

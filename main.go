@@ -209,7 +209,7 @@ func handleExport(c *fiber.Ctx) error {
 		})
 	}
 
-	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS, extracted.LocalAssets)
+	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS, extracted.LocalAssets, extracted.Capture)
 	if err != nil {
 		return c.Status(500).JSON(Response{
 			Success: false,
@@ -253,6 +253,7 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 		HTML:        rewrittenHTML,
 		CSS:         extracted.CSS,
 		JS:          extracted.JS,
+		InlineJS:    extracted.InlineJS,
 		ExternalCSS: extracted.ExternalCSS,
 		ExternalJS:  extracted.ExternalJS,
 	}
@@ -263,6 +264,9 @@ func handleExportNodeJS(c *fiber.Ctx) error {
 			Success: false,
 			Error:   err.Error(),
 		})
+	}
+	if err := addCaptureManifest(projectFiles.Files, extracted.Capture); err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
 
 	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
@@ -320,6 +324,9 @@ func handleExportNodeJSEJS(c *fiber.Ctx) error {
 			Error:   err.Error(),
 		})
 	}
+	if err := addCaptureManifest(projectFiles.Files, extracted.Capture); err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
 
 	zipData, err := nodejs.CreateProjectZip(projectFiles.Files, projectName)
 	if err != nil {
@@ -350,7 +357,7 @@ func handleScrape(c *fiber.Ctx) error {
 		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
 
-	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS, extracted.LocalAssets)
+	zipData, err := zipper.CreateZipWithMetadata(extracted.HTML, extracted.InlineCSS, extracted.InlineJS, extracted.ExternalCSS, extracted.ExternalJS, extracted.LocalAssets, extracted.Capture)
 	if err != nil {
 		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
@@ -380,12 +387,16 @@ func handleScrapeNodeJS(c *fiber.Ctx) error {
 		HTML:        rewrittenHTML,
 		CSS:         extracted.CSS,
 		JS:          extracted.JS,
+		InlineJS:    extracted.InlineJS,
 		ExternalCSS: extracted.ExternalCSS,
 		ExternalJS:  extracted.ExternalJS,
 	}
 
 	projectFiles, err := nodejs.GenerateProject(config)
 	if err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
+	if err := addCaptureManifest(projectFiles.Files, extracted.Capture); err != nil {
 		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
 
@@ -432,6 +443,9 @@ func handleScrapeNodeJSEJS(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
 	}
+	if err := addCaptureManifest(projectFiles.Files, extracted.Capture); err != nil {
+		return c.Status(500).JSON(Response{Success: false, Error: err.Error()})
+	}
 
 	binaryFiles := make(map[string][]byte, len(extracted.LocalAssets))
 	for _, asset := range extracted.LocalAssets {
@@ -444,6 +458,18 @@ func handleScrapeNodeJSEJS(c *fiber.Ctx) error {
 	}
 
 	return sendZip(c, projectName+"-ejs.zip", zipData)
+}
+
+func addCaptureManifest(files map[string]string, capture *extractor.CaptureManifest) error {
+	if capture == nil {
+		return nil
+	}
+	data, err := capture.JSON()
+	if err != nil {
+		return fmt.Errorf("marshal capture manifest: %w", err)
+	}
+	files["uncluster-capture.json"] = string(data)
+	return nil
 }
 
 func handleBundleZip(c *fiber.Ctx) error {
