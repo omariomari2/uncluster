@@ -1,271 +1,337 @@
-# uncluster
+# Uncluster
 
-> **Break apart the blob. Ship modern code.**
+Uncluster is a deterministic HTML transformation toolkit written in Go. It accepts raw HTML, local HTML/ZIP inputs, or public HTTP(S) pages; separates page resources; and generates editable React/Vite/TypeScript or Express/EJS projects.
 
-`uncluster` is a Go-based HTML transformation server. It parses raw HTML into a DOM tree, analyzes its structure, and produces clean outputs — formatted HTML, separated CSS/JS files, React JSX/TSX components, or full scaffolded Node.js projects. It exposes a REST API built on the Fiber framework and ships a standalone CLI tool for local use.
+The repository includes three entry points:
 
----
+- A Fiber API and browser UI served by `main.go`.
+- The primary multi-mode CLI in `cmd/uncluster`.
+- A smaller extraction-only CLI in `cmd/uncluster-split`.
 
-## Features
+## Capabilities
 
-### HTML Formatter
-Parses the HTML input and re-renders it with correct indentation and normalized whitespace. Useful as a preprocessing step before any other transformation.
+| Operation | Input | Output |
+| --- | --- | --- |
+| Format | HTML | Normalized, indented HTML |
+| Split | HTML | Rewritten HTML plus extracted inline/external CSS and JavaScript |
+| Scrape | Public HTTP(S) URL | Localized page archive with CSS, JavaScript, images, fonts, and other referenced assets |
+| React project | HTML or scraped page | Express + Vite + React 18 + TypeScript project with TSX components |
+| EJS project | HTML or scraped page | Express + EJS project with reusable partials |
+| Bundle | Local HTML or ZIP | Original page, split output, and an EJS project in one directory |
+| Analyze | HTML | JSON suggestions for repeated semantic UI patterns |
 
-### Resource Extractor
-Walks the DOM and separates inline `<style>` and `<script>` blocks into individual files. For externally linked resources (CDN-hosted CSS and JS), it makes HTTP requests to download the actual file content, assigns clean local filenames, and rewrites the `<link>` and `<script src>` references in the HTML to point to the local copies.
+TSX generation is rule-based and reproducible. No model or LLM participates in parsing, conversion, component selection, or project generation. The converter prioritizes DOM fidelity over inferred abstractions: it preserves nodes, attributes, source order, text, and significant whitespace while translating HTML syntax to React-valid TSX.
 
-### HTML → JSX Converter
-Converts HTML markup to valid React JSX. This involves:
-- Remapping HTML attributes to their JSX equivalents (`class → className`, `for → htmlFor`, event handlers like `onclick → onClick`)
-- Converting inline `style` strings to JavaScript style objects
-- Detecting repeated list patterns and generating TypeScript interfaces with `.map()` render loops
-- Skipping page-level boilerplate elements (`<html>`, `<head>`, `<body>`)
-- Wrapping the output in a complete, importable React component
+## Requirements
 
-### Component Analyzer
-Performs a depth-first traversal of the DOM and builds a frequency map of elements keyed by `tag.class#id`. Elements that appear 3+ times and whose class names match a set of known UI patterns (`card`, `button`, `modal`, `nav-item`, `form-field`, etc.) are returned as component suggestions, each with a generated name, description, prop list, and starter JSX code.
+- Go 1.21 or newer.
+- Node.js 18 or newer to run generated Vite projects.
 
-### Node.js Project Scaffolder
-Takes the extracted HTML, CSS, and JS and generates a complete Express + Vite project structure. Output files include `package.json`, `vite.config.js`, `server.js`, `tsconfig.json`, `.eslintrc.json`, `.prettierrc`, and `.gitignore`, with source files organized under `src/`. Everything is packaged into a downloadable ZIP archive.
-
-### EJS Project Scaffolder
-Same extraction pipeline, but targets server-side rendering. The HTML is split into EJS partials (header, footer, and page sections), wired into an Express app with `res.render()` routes, and packaged as a ZIP with `views/` and `public/` directories following Express conventions.
-
----
-
-## How it works
-
-### Step 1 — Parse: HTML string → DOM tree
-
-Every operation starts with `html.Parse()` from Go's `golang.org/x/net/html` package. This produces a linked tree of nodes. Each node holds its type (element, text, comment, document), its tag name and attributes, and pointers to its first child and next sibling — the standard DOM tree structure that every subsequent step traverses.
-
-```mermaid
-graph TD
-    A["HTML Input"] --> B["html.Parse()"]
-    B --> C["DOM Tree"]
-    C --> D["Node {Type, Data, Attr[], FirstChild*, NextSibling*}"]
-
-    style A fill:#1565c0,color:#ffffff,stroke:#0d47a1
-    style C fill:#c62828,color:#ffffff,stroke:#b71c1c
-    style D fill:#e65100,color:#ffffff,stroke:#bf360c
-```
-
----
-
-### Step 2 — Analyze: Collect element patterns via DFS
-
-`collectPatterns` does a depth-first traversal of the tree. For each `ElementNode`, it generates a string key in the form `tag.class#id` and looks it up in a map. On the first occurrence a new `ElementPattern` struct is created, tracking the tag name, a frequency count of each attribute, and a frequency count of each direct child tag. On subsequent occurrences the counters increment. By the end of the traversal the map describes the full frequency distribution of element structures across the document.
-
-```mermaid
-graph TD
-    A["collectPatterns(node, map)"] --> B{"node.Type == ElementNode?"}
-    B -->|Yes| C["Generate pattern key"]
-    C --> D["tag.class#id"]
-    D --> E["patterns[key] exists?"]
-    E -->|No| F["Create ElementPattern{TagName, Attributes: map[string]int, Children: map[string]int}"]
-    E -->|Yes| G["patterns[key].Count++"]
-    F --> G
-    G --> H["For each attr: patterns[key].Attributes[attr]++"]
-    H --> I["For each child: patterns[key].Children[child.Data]++"]
-    I --> J["For child = FirstChild; child != nil; child = NextSibling"]
-    J --> K["collectPatterns(child, patterns)"]
-    B -->|No| J
-
-    style A fill:#2e7d32,color:#ffffff,stroke:#1b5e20
-    style D fill:#c62828,color:#ffffff,stroke:#b71c1c
-    style F fill:#e65100,color:#ffffff,stroke:#bf360c
-```
-
----
-
-### Step 3 — Render: DOM node → JSX string
-
-`renderNodeAsJSX` recursively visits every node and writes JSX to a `strings.Builder`. Structural page elements are skipped. For each `ElementNode`, attributes are run through `jsxAttributeMap` (a `map[string]string` of 70+ HTML-to-JSX attribute translations). Void elements (`<img>`, `<input>`, etc.) get self-closing JSX syntax. Text nodes are trimmed and written inline. HTML comments become JSX comment blocks `{/* */}`.
-
-```mermaid
-graph TD
-    A["renderNodeAsJSX(node)"] --> B{"node.Type?"}
-    B -->|DocumentNode| C["For child = FirstChild; child != nil; child = NextSibling"]
-    C --> D["renderNodeAsJSX(child)"]
-    B -->|ElementNode| E["skipElements[tag]?"]
-    E -->|Yes| C
-    E -->|No| F["buf.WriteString('<' + tag)"]
-    F --> G["For each attr: convertAttribute()"]
-    G --> H["jsxAttributeMap[attr] → JSX attr"]
-    H --> I["voidElements[tag]?"]
-    I -->|Yes| J["buf.WriteString(' />')"]
-    I -->|No| K["buf.WriteString('>')"]
-    K --> L["For child = FirstChild; child != nil; child = NextSibling"]
-    L --> M["renderNodeAsJSX(child)"]
-    M --> N["buf.WriteString('</' + tag + '>')"]
-    B -->|TextNode| O["buf.WriteString(trimmed text)"]
-    B -->|CommentNode| P["buf.WriteString('{/*' + data + '*/}')"]
-
-    style A fill:#1565c0,color:#ffffff,stroke:#0d47a1
-    style H fill:#c62828,color:#ffffff,stroke:#b71c1c
-    style I fill:#e65100,color:#ffffff,stroke:#bf360c
-```
-
----
-
-### Step 4 — Suggest: Heuristic component detection
-
-`generateSuggestionsWithoutAI` filters the pattern map using two criteria: the pattern must appear at least 3 times, and its key must contain a substring matching a predefined set of semantic UI identifiers (`card`, `button`, `btn`, `modal`, `nav-item`, `form-field`, etc.). Purely structural elements (`div`, `span`, `section`, `header`, `li`, etc.) are excluded by a separate blocklist. Matching patterns are returned as `ComponentSuggestion` structs with generated names, prop lists, and starter JSX.
-
-```mermaid
-graph TD
-    A["AnalyzeComponents(html)"] --> B["html.Parse()"]
-    B --> C["collectPatterns(doc, map)"]
-    C --> D["DFS: visit all nodes"]
-    D --> E["patterns: map[string]*ElementPattern"]
-    E --> F["generateSuggestionsWithoutAI(patterns)"]
-    F --> G["Filter: count >= 3 && matches obviousPatterns"]
-    G --> H["suggestions.append()"]
-    H --> I["Return []ComponentSuggestion"]
-
-    style C fill:#2e7d32,color:#ffffff,stroke:#1b5e20
-    style D fill:#c62828,color:#ffffff,stroke:#b71c1c
-    style F fill:#e65100,color:#ffffff,stroke:#bf360c
-```
-
----
-
-### Step 5 — Assemble: Compose the final React component
-
-`ConvertToJSX` coordinates the full pipeline. After `renderNodeAsJSX` produces the JSX body, `generateCSSImports` builds the stylesheet import statements from any extracted CSS files, and `generateJSCode` wraps any extracted script logic. The three parts are concatenated into a single component string and returned to the caller.
-
-```mermaid
-graph TD
-    A["ConvertToJSX()"] --> B["convertHTMLToJSX()"]
-    B --> C["html.Parse() → doc"]
-    C --> D["renderNodeAsJSX(doc)"]
-    D --> E["DFS traversal"]
-    E --> F["generateCSSImports()"]
-    F --> G["generateJSCode()"]
-    G --> H["Combine: imports + JSX + code"]
-    H --> I["Return React component string"]
-
-    style A fill:#1565c0,color:#ffffff,stroke:#0d47a1
-    style E fill:#c62828,color:#ffffff,stroke:#b71c1c
-    style H fill:#e65100,color:#ffffff,stroke:#bf360c
-```
-
----
-
-### Key data structures
-
-Three structures do the heavy lifting. The **Pattern Map** is a `map[string]*ElementPattern` that stores frequency data for every element type seen during traversal. The **JSX Attribute Map** is a static `map[string]string` used for O(1) attribute translation at render time. Output is written using `strings.Builder` for O(1) appends — avoids the O(n²) cost of repeated string concatenation in Go.
-
-```mermaid
-graph TD
-    A["Pattern Map"] --> B["tag.class#id → ElementPattern"]
-    B --> C["Attributes: map[string]int {class: 5, id: 3}"]
-    B --> D["Children: map[string]int {div: 4, span: 2}"]
-    B --> E["Count: 5"]
-
-    F["JSX Attribute Map"] --> G["class → className"]
-    F --> H["for → htmlFor"]
-    F --> I["onclick → onClick"]
-
-    J["String Builder"] --> K["buf.WriteString()"]
-    K --> L["O(1) append"]
-    L --> M["Avoid O(n²) concatenation"]
-
-    style A fill:#2e7d32,color:#ffffff,stroke:#1b5e20
-    style F fill:#c62828,color:#ffffff,stroke:#b71c1c
-    style J fill:#e65100,color:#ffffff,stroke:#bf360c
-```
-
----
-
-## Getting started
+## Quick Start
 
 ```bash
-git clone https://github.com/yourusername/uncluster
+git clone https://github.com/omariomari2/uncluster.git
 cd uncluster
 go run .
-# Server starts on :3000
 ```
 
-Static frontend assets are served from `./dist` at `/`.
-
----
-
-## CLI — `uncluster-split`
-
-A standalone binary that runs the extraction pipeline locally without starting the HTTP server. Reads a single HTML file, separates inline and external resources, and writes the output to a directory. Optionally writes a `split-manifest.json` enumerating every output file and its type.
+The browser UI is available at `http://localhost:3000`. Verify the API with:
 
 ```bash
-go run ./cmd/uncluster-split -input <file.html> -output <dir> [-manifest true]
+curl http://localhost:3000/api/health
 ```
 
-| Flag | Required | Description |
-|---|---|---|
-| `-input` | yes | Path to the HTML file to process |
-| `-output` | yes | Directory to write split output files |
-| `-manifest` | no | Write `split-manifest.json` (default: `true`) |
+The server uses `PORT` when set and otherwise listens on port `3000`.
 
-### CLI - full bundle automation
+## Primary CLI
 
-The main CLI can also take a Chrome-extension ZIP or direct HTML file and produce the complete working folder:
+Run the CLI directly:
 
 ```bash
-go run ./cmd/uncluster <source.zip|index.html> -to bundle -out ./sites
+go run ./cmd/uncluster --help
+go run ./cmd/uncluster ./page.html -to split -out ./split-output
 ```
 
-Use `-dest` when you want to choose the exact final folder instead of writing to `-out/<site-name>`:
+Or build it:
 
 ```bash
-go run ./cmd/uncluster <source.zip|index.html> -to bundle -dest ./sites/my-final-folder
+go build -o ./bin/uncluster ./cmd/uncluster
 ```
 
-Output:
+### Syntax
 
 ```text
-sites/<site-name>/
-  index.html
-  unzip/
-  ejs/
+uncluster <input> -to <format> [-out <dir>] [-dest <dir>]
 ```
 
-For ZIP inputs, Uncluster finds the best `index.html`, preferring a subfolder whose name matches the ZIP filename, then preserves only locally referenced assets. The temporary ZIP extraction and any unreferenced files from the original archive are discarded after the run.
+| Format | Accepted input | Default output | Behavior |
+| --- | --- | --- | --- |
+| `format` | HTML file | Standard output | Writes formatted HTML; with `-out`, writes `<dir>/index.html` |
+| `analyze` | HTML file | Standard output | Writes suggestion JSON; with `-out`, writes `<dir>/components.json` |
+| `split` | HTML file | `./split-output` | Extracts inline and remote CSS/JS and writes `split-manifest.json` |
+| `nodejs` | HTML file | `./nodejs-project` | Generates a React/Vite/TypeScript project |
+| `nodejs-ejs` | HTML file | `./nodejs-ejs-project` | Generates an Express/EJS project |
+| `bundle` | HTML or ZIP file | `./bundle-output/<site>` | Writes the original page, split resources, and an EJS project |
 
----
+`-dest` is valid only for `bundle` and selects the exact final directory. Without it, bundle mode derives a site name and creates that directory under `-out`.
 
-## API endpoints
+Examples:
 
-All endpoints accept `application/json`. Export endpoints return `application/zip`.
+```bash
+uncluster ./page.html -to format
+uncluster ./page.html -to analyze -out ./analysis
+uncluster ./page.html -to nodejs -out ./react-site
+uncluster ./page.html -to nodejs-ejs -out ./ejs-site
+uncluster ./capture.zip -to bundle -out ./sites
+uncluster ./capture.zip -to bundle -dest ./sites/example.com
+```
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/format` | Re-indent and normalize HTML |
-| `POST` | `/api/convert` | Convert HTML to a React JSX component |
-| `POST` | `/api/analyze` | Return component suggestions from DOM pattern analysis |
-| `POST` | `/api/export` | Extract CSS/JS resources and return a ZIP |
-| `POST` | `/api/export-nodejs` | Scaffold an Express + Vite + TypeScript project ZIP |
-| `POST` | `/api/export-nodejs-ejs` | Scaffold an Express + EJS server-rendered project ZIP |
-| `GET`  | `/api/health` | Health check |
+The primary CLI processes local files. URL capture is currently exposed through the API and browser UI.
 
----
+For raw HTML, extraction downloads only literal absolute HTTP(S) stylesheet and script URLs. It does not infer a base URL for relative images or other assets; use URL scraping or bundle mode when those files must be localized.
 
-## Configuration
+### Extraction-only CLI
 
-| Variable | Description |
-|---|---|
-| `PORT` | HTTP server port (default: `3000`) |
+`cmd/uncluster-split` provides a narrow interface for splitting one HTML file:
 
----
+```bash
+go run ./cmd/uncluster-split \
+  -input ./page.html \
+  -output ./split-output \
+  -manifest=true
+```
 
-## Stack
+Set `-manifest=false` to omit `split-manifest.json`.
 
-- **Language**: Go 1.21
-- **Web framework**: [Fiber v2](https://github.com/gofiber/fiber)
-- **HTML parsing**: `golang.org/x/net/html`
-- **Project templates**: `text/template`
-- **Archive output**: `archive/zip`
+## HTTP API
 
----
+Start the service with `go run .`. JSON endpoints accept `Content-Type: application/json`; export endpoints return `application/zip` attachments.
 
-## License
+| Method | Route | Request | Response |
+| --- | --- | --- | --- |
+| `GET` | `/api/health` | None | Service status and VCS revision |
+| `POST` | `/api/format` | `{"html":"..."}` | `{"success":true,"data":"..."}` |
+| `POST` | `/api/analyze` | `{"html":"..."}` | Component suggestions as JSON |
+| `POST` | `/api/export` | `{"html":"..."}` | Split resource ZIP |
+| `POST` | `/api/export-nodejs` | `{"html":"..."}` | React/Vite/TypeScript project ZIP |
+| `POST` | `/api/export-nodejs-ejs` | `{"html":"..."}` | Express/EJS project ZIP |
+| `POST` | `/api/bundle-zip` | Multipart field `file` containing a ZIP | Bundle ZIP |
+| `POST` | `/api/scrape` | `{"url":"https://..."}` | Localized split resource ZIP |
+| `POST` | `/api/scrape-nodejs` | `{"url":"https://..."}` | Localized React project ZIP |
+| `POST` | `/api/scrape-nodejs-ejs` | `{"url":"https://..."}` | Localized EJS project ZIP |
 
-MIT
+Capture a public page:
+
+```bash
+curl -sS -X POST http://localhost:3000/api/scrape \
+  -H "Content-Type: application/json" \
+  --data '{"url":"https://example.com"}' \
+  --output example.zip
+```
+
+Process an existing capture ZIP as a bundle:
+
+```bash
+curl -sS -X POST http://localhost:3000/api/bundle-zip \
+  -F "file=@example.zip" \
+  --output bundle.zip
+```
+
+## Output Layouts
+
+### Split output
+
+The exact files depend on the source document and which downloads succeed:
+
+```text
+split-output/
+|-- index.html
+|-- inline/
+|   |-- style-1.css
+|   `-- script-1.js
+|-- external/
+|   |-- css/
+|   `-- js/
+|-- assets/                  # Scraped or bundled images, fonts, and other files
+|-- split-manifest.json      # Local CLI output
+`-- uncluster-capture.json   # API export archives
+```
+
+`index.html` is rewritten to reference the emitted resource paths. Executable inline scripts are extracted; data scripts such as JSON-LD remain in the document.
+
+### React/Vite/TypeScript project
+
+```text
+project/
+|-- package.json
+|-- vite.config.js
+|-- server.js
+|-- tsconfig.json
+|-- public/
+|   |-- assets/
+|   `-- scripts/
+`-- src/
+    |-- index.html
+    |-- App.tsx
+    |-- main.tsx
+    |-- components/
+    |   |-- MainComponent.tsx
+    |   `-- <Section>.tsx
+    `-- styles/
+```
+
+Run a generated React project with:
+
+```bash
+npm install
+npm run dev
+```
+
+Vite listens on port `8080`. `npm run build` creates `dist/`, and `npm start` serves the production build through Express.
+
+### Express/EJS project
+
+```text
+project/
+|-- package.json
+|-- server.js
+|-- public/
+|   |-- inline/
+|   |-- external/
+|   `-- assets/
+`-- views/
+    |-- index.ejs
+    `-- partials/
+```
+
+Run a generated EJS project with `npm install && npm start`. The generated server listens on `PORT` or port `8080`.
+
+### Bundle output
+
+```text
+<site>/
+|-- index.html       # Selected source page, unchanged
+|-- unzip/           # Rewritten split output and local assets
+`-- ejs/             # Runnable Express/EJS project
+```
+
+For ZIP inputs, bundle mode scans for usable `index.html` files and chooses one deterministically by source-name match, depth, size, and path. Bundle mode does not currently create a TSX project; run `-to nodejs` against an HTML source when React output is required.
+
+## Capture Manifest
+
+API export and scrape archives include `uncluster-capture.json`:
+
+```json
+{
+  "version": 1,
+  "source_url": "https://example.com",
+  "complete": true,
+  "assets": [
+    {
+      "url": "https://example.com/site.css",
+      "path": "external/css/site.css",
+      "type": "css",
+      "status": "localized"
+    }
+  ]
+}
+```
+
+Asset status values are:
+
+- `localized`: downloaded and written to the export.
+- `retained-external`: intentionally left remote, such as an iframe or supported hosted stylesheet.
+- `failed`: localization failed; the manifest sets `complete` to `false`.
+
+`complete: true` means that every attempted localization succeeded. It does not guarantee that the result is fully offline because intentionally retained resources may still require network access.
+
+## Processing Architecture
+
+### Raw HTML
+
+```text
+HTML
+  -> extractor.Extract
+  -> htmlutil.InlineCollector + fetcher
+  -> formatter.Format
+  -> zipper or nodejs generator
+```
+
+### Public URL
+
+```text
+URL
+  -> scraper.ScrapeURL
+  -> safehttp validation and bounded fetches
+  -> HTML/CSS asset discovery and path rewriting
+  -> extractor.ExtractedContent
+  -> split, TSX, or EJS export
+```
+
+### Local HTML or ZIP bundle
+
+```text
+HTML/ZIP
+  -> bundle.ProcessWithOptions
+  -> safe archive extraction and index selection
+  -> recursive local-asset discovery
+  -> index.html + unzip/ + ejs/
+```
+
+TSX and EJS generation share component boundary selection and naming. TSX markup translation is centralized in `internal/converter`, while `internal/nodejs` assembles runnable projects around the converted views.
+
+## Safety and Limits
+
+| Control | Current behavior |
+| --- | --- |
+| URL schemes | Only `http` and `https` are accepted |
+| Network targets | Loopback, private, link-local, multicast, unspecified, and reserved destinations are blocked at connection time |
+| Redirects | Every redirect is revalidated; at most 10 redirects are followed |
+| Remote body size | Each fetched response is capped at 25 MiB |
+| API request size | Fiber request bodies are capped at 50 MiB |
+| ZIP expansion | Extracted content is capped at 512 MiB |
+| ZIP paths | Entries resolving outside the temporary extraction root are rejected |
+| Local assets | Resolution is confined to the source root; nested CSS references are discovered recursively |
+
+The development server currently enables CORS for all origins. Restrict this before exposing the API on an untrusted network.
+
+## Package Map
+
+| Path | Responsibility |
+| --- | --- |
+| `main.go` | Fiber server, API handlers, health metadata, and static UI |
+| `internal/htmlutil` | DOM/attribute helpers and inline resource collection |
+| `internal/formatter` | DOM-based HTML rendering and whitespace handling |
+| `internal/extractor` | Resource extraction, fetch coordination, link rewriting, and capture metadata |
+| `internal/safehttp` | URL validation, SSRF-resistant dialing, redirects, and response limits |
+| `internal/fetcher` | Remote text/binary downloads and stable resource naming |
+| `internal/scraper` | Public page capture and HTML/CSS asset localization |
+| `internal/converter` | Deterministic HTML-fragment-to-TSX conversion |
+| `internal/nodejs` | React/Vite and EJS decomposition, templates, and ZIP generation |
+| `internal/bundle` | HTML/ZIP intake, index selection, and local asset packaging |
+| `internal/analyzer` | Heuristic component suggestions, independent of TSX conversion |
+| `internal/zipper` | Split archive creation |
+
+## Development
+
+```bash
+go build ./...
+go test ./...
+go run ./cmd/uncluster --help
+```
+
+If Windows Application Control blocks temporary Go test binaries, use:
+
+```powershell
+powershell -File qa/run-tests.ps1
+```
+
+The opt-in real-site test in `cmd/uncluster/zz_e2e_test.go` requires `E2E_ZIP` and `E2E_OUT`.
+
+Files under `qa/workbook/` are generated. Edit `qa/source/quality-model.json`, then regenerate them with:
+
+```bash
+go run ./qa/tools/qualitydoc
+```
+
+The authoritative TSX design intent is documented in `docs/intent/tsx-conversion.md`.
