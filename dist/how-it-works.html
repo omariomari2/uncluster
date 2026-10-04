@@ -125,21 +125,17 @@ SOFTWARE.
       --hairline-mid: #777780; --hairline-lo: #38383e;
     }
     .technical .how-heading { margin-bottom: 24px; }
-    .technical-figure { max-width: 1120px; margin: 0 auto; }
+    .technical-figure { max-width: 960px; margin: 0 auto; }
     .diagram-scroll[data-hairline] { aspect-ratio: auto; overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x pan-y; scrollbar-color: #777780 #000; padding-bottom: 16px; }
     .diagram-scroll:focus-visible { outline: 1px solid #fff; outline-offset: 4px; }
     .diagram-scroll-hint { display: none; margin: 0 0 16px; font-size: 14px; }
-    #architecture-diagram { position: static; display: block; width: 100%; min-width: 1080px; height: auto; touch-action: auto; }
-    #architecture-diagram .diagram-hit { fill: transparent; stroke: none; pointer-events: all; }
+    #architecture-diagram { position: static; display: block; width: 100%; min-width: 900px; height: auto; touch-action: auto; }
+    #architecture-diagram .diagram-hit { fill: #000; stroke: #55555d; stroke-width: 1; pointer-events: all; }
     #architecture-diagram [data-node] { cursor: pointer; outline: none; }
     #architecture-diagram [data-node]:is(:hover, :focus-visible, [aria-expanded="true"]) .diagram-label { text-decoration: underline; text-underline-offset: 5px; }
     #architecture-diagram .diagram-link, #architecture-diagram .diagram-arrow {
       fill: none; stroke: #a1a1a8; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round;
     }
-    #architecture-diagram .diagram-divider { fill: none; stroke: #28282d; stroke-width: 1; }
-    .diagram-stage-title, .diagram-stage-number { fill: #fff; stroke: none; text-anchor: middle; font-family: Haffer, Arial, sans-serif; }
-    .diagram-stage-title { font-size: 27px; }
-    .diagram-stage-number { font: 14px Consolas, monospace; fill: #a1a1a8; }
     .diagram-label, .diagram-caption { fill: #fff; stroke: none; text-anchor: middle; font-family: Haffer, Arial, sans-serif; }
     .diagram-label { font-size: 22px; }
     .diagram-caption { font-size: 15px; font-family: Consolas, monospace; }
@@ -293,8 +289,8 @@ SOFTWARE.
         <svg id="architecture-diagram" role="group" aria-labelledby="architecture-title" aria-describedby="architecture-detail"></svg>
       </div>
       <figcaption class="technical-caption">
-        <p>Read left to right. Select any function or type to inspect its Go implementation.</p>
-        <p>Columns group related responsibilities, not mandatory calls. Split exports bypass TSX / EJS generation.</p>
+        <p>HTML / URL → DOM parsing → resource extraction → export. Select a node for its Go implementation.</p>
+        <p>Scraper and extractor share htmlutil.InlineCollector. Split, React and EJS are alternative output paths.</p>
       </figcaption>
     </figure>
     <aside class="bundle-route" aria-labelledby="bundle-title">
@@ -1204,20 +1200,13 @@ window.unclusterArchitectureNotes = {
   const { Cam, fit, proj, facing, rings, prism, solid, put, mk, seg } = HL;
   const svg = document.querySelector('#architecture-diagram');
   const nodes = [
-    ['html', 'HTML ingress', 'Fiber / local CLI', 'sheet'],
-    ['url', 'scraper.ScrapeURL', 'remote capture', 'browser'],
-    ['safehttp', 'safehttp.Client', 'net.Dialer / transport', 'project'],
-    ['parse', 'html.Parse', '*html.Node', 'tree'],
-    ['inline', 'InlineCollector', 'DOM mutation / builders', 'layers'],
-    ['fetcher', 'fetcher', '[]FetchedResource', 'browser'],
-    ['extract', 'ExtractedContent', 'typed intermediate result', 'layers'],
-    ['capture', 'CaptureManifest', 'encoding/json', 'sheet'],
-    ['converter', 'JSXConverter', 'attribute / text rules', 'tree'],
-    ['split', 'archive/zip', 'CreateZipWithMetadata', 'layers'],
-    ['react', 'nodejs / TSX', 'GenerateProject', 'project'],
-    ['ejs', 'nodejs / EJS', 'GenerateEJSProject', 'project'],
-    ['templates', 'text/template', 'scaffold configuration', 'sheet'],
-    ['artifact', 'ZIP response', '[]byte / Fiber', 'project'],
+    ['html', 'HTML', 'Fiber / local CLI', 'sheet'],
+    ['url', 'Public URL', 'scraper.ScrapeURL', 'browser'],
+    ['parse', 'Parse HTML', 'golang.org/x/net/html', 'tree'],
+    ['extract', 'Extract resources', 'extractor.Extract', 'layers'],
+    ['split', 'Split files', 'archive/zip', 'layers'],
+    ['react', 'React project', 'Vite + TypeScript', 'project'],
+    ['ejs', 'EJS project', 'Express + partials', 'project'],
   ];
 
   function glyph(parent, kind, x, y) {
@@ -1260,36 +1249,28 @@ window.unclusterArchitectureNotes = {
 
   function render() {
     svg.replaceChildren();
-    svg.setAttribute('viewBox', '0 0 1440 610');
+    svg.setAttribute('viewBox', '0 0 1160 610');
     mk('title', { id: 'architecture-title' }, svg).textContent = 'Uncluster page conversion pipeline';
     mk('desc', { id: 'architecture-detail' }, svg).textContent =
-      'Fourteen selectable Go implementation nodes grouped into five left-to-right stages: ingress, DOM, resources, generation, and artifacts. Each node opens implementation details. Nodes within a stage are related responsibilities, not mandatory sequential calls.';
+      'HTML or a fetched public page is parsed into a document tree. Resources are extracted and exported as split files, a React project, or an EJS project. Select any node for its Go implementation details.';
     const defs = mk('defs', {}, svg);
     const arrow = mk('marker', { id: 'architecture-arrow', markerWidth: 8, markerHeight: 8, refX: 7, refY: 4, orient: 'auto', markerUnits: 'userSpaceOnUse' }, defs);
     mk('path', { d: 'M1 1 L7 4 L1 7', class: 'diagram-arrow' }, arrow);
     const wires = mk('g', { class: 'diagram-wires' }, svg);
     const positions = {
-      html: [8, 110, 240], url: [8, 275, 240], safehttp: [8, 440, 240],
-      parse: [304, 110, 240], inline: [304, 275, 240],
-      fetcher: [600, 110, 240], extract: [600, 275, 240], capture: [600, 440, 240],
-      converter: [896, 110, 240], react: [896, 275, 240], ejs: [896, 440, 240],
-      templates: [1192, 110, 240], split: [1192, 275, 240], artifact: [1192, 440, 240]
+      html: [8, 115, 208], url: [8, 365, 208], parse: [316, 240, 208],
+      extract: [624, 240, 208], split: [940, 30, 212], react: [940, 240, 212], ejs: [940, 450, 212]
     };
-    const stages = [['01', 'Ingress', 'HTTP / local files'], ['02', 'DOM', 'Parse / traverse'], ['03', 'Resources', 'Extract / localize'], ['04', 'Generation', 'TSX / EJS'], ['05', 'Artifacts', 'Scaffold / package']];
-    stages.forEach(([number, title, caption], index) => {
-      const center = 128 + index * 296;
-      mk('text', { x: center, y: 24, class: 'diagram-stage-number' }, svg).textContent = number;
-      mk('text', { x: center, y: 56, class: 'diagram-stage-title' }, svg).textContent = title;
-      mk('text', { x: center, y: 82, class: 'diagram-caption' }, svg).textContent = caption;
-      if (index < stages.length - 1) {
-        const start = center + 92, end = center + 204;
-        mk('path', { d: `M${start} 48 C${start + 35} 31 ${end - 35} 31 ${end} 48`, class: 'diagram-link', 'marker-end': 'url(#architecture-arrow)' }, wires);
-        mk('path', { d: `M${center + 148} 112 V580`, class: 'diagram-divider' }, wires);
-      }
-    });
+    const link = d => mk('path', { d, class: 'diagram-link', 'marker-end': 'url(#architecture-arrow)' }, wires);
+    link('M216 186 H266 V311 H314');
+    link('M216 436 H266 V311 H314');
+    link('M524 311 H622');
+    link('M832 311 H884 V101 H938');
+    link('M884 311 H938');
+    link('M884 311 V521 H938');
     for (const [id, title, caption, kind] of nodes) {
       const [x, y, w] = positions[id], g = mk('g', { 'data-node': id, role: 'button', tabindex: 0, 'aria-label': `${title}: implementation details`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'node-detail' }, svg);
-      mk('rect', { x, y, width: w, height: 142, class: 'diagram-hit' }, g);
+      mk('rect', { x, y, width: w, height: 142, rx: 8, class: 'diagram-hit' }, g);
       glyph(g, kind, x + w / 2, y - 4);
       mk('text', { x: x + w / 2, y: y + 105, class: 'diagram-label' }, g).textContent = title;
       mk('text', { x: x + w / 2, y: y + 128, class: 'diagram-caption' }, g).textContent = caption;
