@@ -45,6 +45,5 @@ These controls do not establish permission to copy a website.
 ## Details
 
 - [Commands, API, and output formats](docs/usage.md)
-- [Conversion intent](docs/intent/tsx-conversion.md)
 - [Command-line source](cmd/uncluster/main.go)
 
