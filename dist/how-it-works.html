@@ -965,7 +965,7 @@ function mount({ stage, svg, read }, value) {
     return { ...el, detail, id: `p${packet}-${kind}`, kind };
   }));
   const B = register(stage, dt => {
-    if (!reducedMotion()) clock += dt * rate;
+    if (!reducedMotion()) clock += dt * rate * 2;
     if (clock === last) return !reducedMotion();
     last = clock;
     const paths = [], phase = (clock * 254 / 18) % 13;
