@@ -1262,12 +1262,12 @@ window.unclusterArchitectureNotes = {
       extract: [624, 240, 208], split: [940, 30, 212], react: [940, 240, 212], ejs: [940, 450, 212]
     };
     const link = d => mk('path', { d, class: 'diagram-link', 'marker-end': 'url(#architecture-arrow)' }, wires);
-    link('M216 186 H266 V311 H314');
-    link('M216 436 H266 V311 H314');
-    link('M524 311 H622');
-    link('M832 311 H884 V101 H938');
-    link('M884 311 H938');
-    link('M884 311 V521 H938');
+    link('M216 186 C266 186 264 311 314 311');
+    link('M216 436 C266 436 264 311 314 311');
+    link('M524 311 C556 311 590 311 622 311');
+    link('M832 311 C890 311 880 101 938 101');
+    link('M832 311 C868 311 902 311 938 311');
+    link('M832 311 C890 311 880 521 938 521');
     for (const [id, title, caption, kind] of nodes) {
       const [x, y, w] = positions[id], g = mk('g', { 'data-node': id, role: 'button', tabindex: 0, 'aria-label': `${title}: implementation details`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'node-detail' }, svg);
       mk('rect', { x, y, width: w, height: 142, rx: 8, class: 'diagram-hit' }, g);
