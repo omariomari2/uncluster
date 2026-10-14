@@ -152,7 +152,7 @@
       group: 'Intake paths',
       label: 'URL ADAPTER',
       title: 'scraper.ScrapeURL',
-      detail: 'Fetch page and capture its render assets',
+      detail: 'API only: fetch page and capture its render assets',
       meta: 'URL -> ExtractedContent',
       kind: 'adapter',
       order: 2,

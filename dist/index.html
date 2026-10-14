@@ -39,8 +39,8 @@
           <div class="dropdown-section">
             <h4>How To Use:</h4>
             <ol>
-              <li><strong>Upload HTML:</strong> Click "Upload HTML" mode and select your HTML file — OR switch to "Scrape URL" mode and paste any website URL to fetch the page and all its assets automatically</li>
-              <li><strong>Choose Action:</strong> After upload or scrape, select from:
+              <li><strong>Upload a File:</strong> Click "Upload" and select an HTML file or a ZIP of a full website</li>
+              <li><strong>Choose Action:</strong> After upload, select from:
                 <ul>
                   <li><strong>Format HTML:</strong> Re-indent and normalize your HTML structure</li>
                   <li><strong>Export Zip:</strong> Extract inline CSS/JS into separate files and download external resources</li>
@@ -125,17 +125,7 @@
     <div class="button fifth"><button type="button">Bundle ZIP → EJS</button><span></span></div>
 
     <div class="input-section">
-      <div class="input-mode-toggle">
-        <button class="mode-btn mode-btn-active" id="mode-upload-btn">Upload HTML</button>
-        <button class="mode-btn" id="mode-scrape-btn">Scrape URL</button>
-      </div>
-
       <div class="button upload"><button type="button">Upload</button><span></span></div>
-
-      <div class="scrape-input-area" id="scrape-input-area" style="display:none;">
-        <input type="url" id="scrape-url-input" placeholder="https://example.com" autocomplete="off" spellcheck="false">
-        <div class="button scrape-btn" id="scrape-action-btn"><button type="button">Scrape</button><span></span></div>
-      </div>
     </div>
 
     <svg class="top-right" width="219" height="147" viewBox="0 0 219 147" fill="none" xmlns="http://www.w3.org/2000/svg">

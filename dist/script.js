@@ -33,7 +33,6 @@ const API_BASE = window.location.origin.includes('localhost') && !window.locatio
 
 let uploadedHTML = '';
 let uploadedZip = null;
-let scrapeMode = false; // true = URL scrape mode, false = file upload mode
 const DOWNLOAD_STORAGE_KEY = 'downloadSettings';
 const DOWNLOAD_DEFAULTS = {
     useFilePicker: true,
@@ -240,43 +239,6 @@ function resetToInitialState() {
     uploadedHTML = '';
     uploadedZip = null;
 
-    // Also reset scrape mode URL indicator
-    const scrapeArea = document.getElementById('scrape-input-area');
-    if (scrapeArea) {
-        scrapeArea.classList.remove('has-url');
-        const scrapeBtn = scrapeArea.querySelector('#scrape-action-btn button');
-        if (scrapeBtn) scrapeBtn.textContent = 'Scrape';
-    }
-    const urlInput = document.getElementById('scrape-url-input');
-    if (urlInput) urlInput.value = '';
-}
-
-/* ── input mode toggle ── */
-function setInputMode(mode) {
-    scrapeMode = mode === 'scrape';
-    const uploadBtn = document.getElementById('mode-upload-btn');
-    const scrapeBtn = document.getElementById('mode-scrape-btn');
-    const uploadButton = document.querySelector('.button.upload');
-    const scrapeArea = document.getElementById('scrape-input-area');
-
-    if (uploadBtn) uploadBtn.classList.toggle('mode-btn-active', !scrapeMode);
-    if (scrapeBtn) scrapeBtn.classList.toggle('mode-btn-active', scrapeMode);
-    if (uploadButton) uploadButton.style.display = scrapeMode ? 'none' : '';
-    if (scrapeArea) scrapeArea.style.display = scrapeMode ? 'flex' : 'none';
-
-    // Reset state when switching modes
-    uploadedHTML = '';
-    uploadedZip = null;
-    const actionButtons = [
-        document.querySelector('.button.first'),
-        document.querySelector('.button.sec'),
-        document.querySelector('.button.third'),
-        document.querySelector('.button.fourth'),
-        document.querySelector('.button.fifth'),
-    ];
-    actionButtons.forEach(b => b && b.classList.remove('button-visible'));
-    const uploadBtnEl = document.querySelector('.button.upload button');
-    if (uploadBtnEl) uploadBtnEl.textContent = 'Upload';
 }
 
 function showActionButtons() {
@@ -294,7 +256,7 @@ function showActionButtons() {
         }
     });
     if (formatButton) {
-        formatButton.classList.toggle('button-visible', !scrapeMode);
+        formatButton.classList.add('button-visible');
     }
     if (bundleButton) bundleButton.classList.remove('button-visible');
 }
@@ -541,60 +503,6 @@ async function exportTSXProject() {
     }
 }
 
-async function scrapeAndExport(exportType) {
-    const urlInput = document.getElementById('scrape-url-input');
-    const rawURL = urlInput ? urlInput.value.trim() : '';
-    if (!rawURL) {
-        showToast('Please enter a URL to scrape', 'error');
-        return;
-    }
-
-    const endpointMap = {
-        zip: '/api/scrape',
-        nodejs: '/api/scrape-nodejs',
-        ejs: '/api/scrape-nodejs-ejs',
-    };
-
-    const endpoint = endpointMap[exportType];
-    if (!endpoint) return;
-
-    // Find the button that triggered this (the action button)
-    const buttonSelectors = { zip: '.button.fourth', nodejs: '.button.first', ejs: '.button.third' };
-    const button = document.querySelector(buttonSelectors[exportType]);
-    if (button) setButtonLoading(button, true);
-
-    try {
-        const response = await fetch(`${API_BASE}${endpoint}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: rawURL }),
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Scrape failed');
-        }
-
-        const blob = await response.blob();
-        const contentDisposition = response.headers.get('Content-Disposition');
-        let defaultName = exportType === 'ejs' ? 'project-ejs.zip' : exportType === 'nodejs' ? 'project.zip' : 'extracted.zip';
-        const serverFilename = contentDisposition
-            ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || defaultName
-            : defaultName;
-
-        const nameInputIds = { zip: 'download-name-zip', nodejs: 'download-name-tsx', ejs: 'download-name-ejs' };
-        const filename = resolveDownloadName(nameInputIds[exportType], serverFilename, '.zip');
-        const result = await downloadBlob(blob, filename, PICKER_TYPES.zip);
-        if (result !== 'canceled') {
-            showToast('Scraped and exported successfully!', 'success');
-        }
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        if (button) setButtonLoading(button, false);
-    }
-}
-
 async function exportEJSProject() {
     if (!uploadedHTML) {
         showToast('Please upload an HTML file first', 'error');
@@ -709,28 +617,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // ── input mode toggle buttons ──
-    const modeUploadBtn = document.getElementById('mode-upload-btn');
-    const modeScrapeBtn = document.getElementById('mode-scrape-btn');
-    if (modeUploadBtn) modeUploadBtn.addEventListener('click', () => setInputMode('upload'));
-    if (modeScrapeBtn) modeScrapeBtn.addEventListener('click', () => setInputMode('scrape'));
-
-    // ── scrape URL action button (shows export options after URL is set) ──
-    const scrapeActionBtn = document.getElementById('scrape-action-btn');
-    if (scrapeActionBtn) {
-        scrapeActionBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const urlInput = document.getElementById('scrape-url-input');
-            if (!urlInput || !urlInput.value.trim()) {
-                showToast('Please enter a URL', 'error');
-                return;
-            }
-            // Show action buttons so user can choose export format
-            showActionButtons();
-            showToast('URL ready — choose an export format above', 'success');
-        });
-    }
-
     const uploadButton = document.querySelector('.button.upload');
     const formatButton = document.querySelector('.button.sec');
     const exportEJSButton = document.querySelector('.button.third');
@@ -755,33 +641,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (exportZipButton) {
         exportZipButton.addEventListener('click', (e) => {
             e.preventDefault();
-            if (scrapeMode) {
-                scrapeAndExport('zip');
-            } else {
-                exportZip();
-            }
+            exportZip();
         });
     }
 
     if (exportTSXButton) {
         exportTSXButton.addEventListener('click', (e) => {
             e.preventDefault();
-            if (scrapeMode) {
-                scrapeAndExport('nodejs');
-            } else {
-                exportTSXProject();
-            }
+            exportTSXProject();
         });
     }
 
     if (exportEJSButton) {
         exportEJSButton.addEventListener('click', (e) => {
             e.preventDefault();
-            if (scrapeMode) {
-                scrapeAndExport('ejs');
-            } else {
-                exportEJSProject();
-            }
+            exportEJSProject();
         });
     }
 
