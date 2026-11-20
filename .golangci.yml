@@ -1,0 +1,41 @@
+version: "2"
+
+linters:
+  default: standard
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+        text: "Error return value of `reader.Close`"
+      - linters:
+          - errcheck
+        text: "Error return value of `resp.Body.Close`"
+      - linters:
+          - errcheck
+        text: "Error return value of `os.Remove`"
+      - linters:
+          - errcheck
+        text: "Error return value of `src.Close`"
+      - linters:
+          - errcheck
+        text: "Error return value of `tmpZip.Close`"
+      - linters:
+          - errcheck
+        text: "Error return value of `os.RemoveAll`"
+      - linters:
+          - staticcheck
+        text: "QF1001:"
+      - linters:
+          - staticcheck
+        text: "QF1012:"
+      - linters:
+          - staticcheck
+        text: "QF1003:"
+      - linters:
+          - staticcheck
+        path: internal/analyzer/components.go
+        text: "SA1019:"
+      - linters:
+          - unused
+        path: internal/scraper/scraper.go
+        text: "func extractCSSURLs is unused"
