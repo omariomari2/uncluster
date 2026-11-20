@@ -110,3 +110,6 @@ qa/
 
 # End-to-end run output (generated, not source)
 alre-output/
+
+# GoReleaser output; keep the tracked dist/ demo site untouched.
+.goreleaser-dist/

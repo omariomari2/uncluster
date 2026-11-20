@@ -63,6 +63,14 @@ Split mode extracts inline resources and rewrites references. For a page with `<
 
 Use Go 1.21 or later. Use Node.js 18 or later to run a generated Vite project.
 
+Download a prebuilt binary from [Releases](https://github.com/omariomari2/uncluster/releases), or install the CLI with:
+
+```sh
+go install github.com/omariomari2/uncluster/cmd/uncluster@latest
+```
+
+To build from source:
+
 ```sh
 git clone https://github.com/omariomari2/uncluster.git
 cd uncluster
