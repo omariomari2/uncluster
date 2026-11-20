@@ -1,7 +1,6 @@
 # Uncluster
 
 [![CI](https://github.com/omariomari2/uncluster/actions/workflows/ci.yml/badge.svg)](https://github.com/omariomari2/uncluster/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/omariomari2/uncluster)](https://goreportcard.com/report/github.com/omariomari2/uncluster)
 [![Go version](https://img.shields.io/github/go-mod/go-version/omariomari2/uncluster)](https://github.com/omariomari2/uncluster/blob/main/go.mod)
 [![License: MIT](https://img.shields.io/github/license/omariomari2/uncluster)](LICENSE)
 
